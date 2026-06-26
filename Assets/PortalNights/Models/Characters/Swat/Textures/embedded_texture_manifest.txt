@@ -1,0 +1,6 @@
+Soldier_Body_diffuse.png: 1479855 bytes, 1024x1024
+Soldier_head_diffuse.png: 1350593 bytes, 1024x1024
+Soldier_Body_specular.png: 401059 bytes, 512x512
+Soldier_head_specular.png: 427508 bytes, 512x512
+Soldier_Body_normal.png: 438364 bytes, 512x512
+Soldier_head_normal.png: 259594 bytes, 512x512
