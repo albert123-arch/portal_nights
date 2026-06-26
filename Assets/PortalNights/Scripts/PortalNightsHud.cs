@@ -1,9 +1,9 @@
 using System.Collections.Generic;
 using System.Text;
-using UnityEngine;
-using UnityEngine.UI;
 using Unity.Netcode;
+using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
@@ -13,6 +13,8 @@ namespace PortalNights
 {
     public sealed class PortalNightsHud : MonoBehaviour
     {
+        private const float RefreshInterval = 0.1f;
+
         [SerializeField] private Text waveText;
         [SerializeField] private Text enemiesText;
         [SerializeField] private Text laneText;
@@ -26,10 +28,14 @@ namespace PortalNights
 
         private PortalNightsGameController controller;
         private float toastTimer;
-        private GUIStyle controlsStyle;
+        private float refreshTimer;
         private bool universeCompleteLeaderboardVisible = true;
 
+        private static int textWritesSinceLastSample;
+        private static int totalTextWrites;
+
         public static PortalNightsHud Instance { get; private set; }
+        public static int TotalTextWrites => totalTextWrites;
 
         private void Awake()
         {
@@ -51,19 +57,25 @@ namespace PortalNights
         private void Update()
         {
             UpdateLeaderboardToggle();
-            Refresh();
+            refreshTimer -= Time.unscaledDeltaTime;
+            if (refreshTimer <= 0f || controller == null)
+            {
+                refreshTimer = RefreshInterval;
+                Refresh();
+            }
+
             UpdateToast();
         }
 
         private void OnGUI()
         {
             DrawCrosshair();
-            DrawControlsHint();
         }
 
         public void Bind(PortalNightsGameController gameController)
         {
             controller = gameController;
+            refreshTimer = 0f;
             Refresh();
         }
 
@@ -74,16 +86,13 @@ namespace PortalNights
                 return;
             }
 
-            toastText.text = message;
+            SetTextIfChanged(toastText, PortalNightsLocalization.LocalizeRuntimeText(message));
             toastTimer = 2.8f;
         }
 
         public void ShowRunStatus(int universeIndex, int score)
         {
-            if (laneText != null)
-            {
-                laneText.text = $"UNIVERSE {Mathf.Max(1, universeIndex)}   SCORE: {Mathf.Max(0, score)}";
-            }
+            SetTextIfChanged(laneText, $"{PortalNightsLocalization.Text("hud.universe")} {Mathf.Max(1, universeIndex)}   {PortalNightsLocalization.Text("hud.score")}: {Mathf.Max(0, score)}");
         }
 
         public void ShowUniverseCompleteSummary(PortalNightsRunState runState, IReadOnlyList<PortalNightsLeaderboardEntry> topEntries)
@@ -94,21 +103,9 @@ namespace PortalNights
             }
 
             runState.UpdateTotalRunTime();
-            if (waveText != null)
-            {
-                waveText.text = $"UNIVERSE {Mathf.Max(1, runState.universeIndex)} COMPLETE";
-            }
-
-            if (enemiesText != null)
-            {
-                enemiesText.text = $"SCORE: {PortalNightsScoreCalculator.CalculateSummaryScore(runState)}   TIME: {FormatTime(runState.totalRunTime)}";
-            }
-
-            if (laneText != null)
-            {
-                laneText.text = $"ENEMIES: {runState.enemiesKilled + runState.enhancedEnemiesKilled}   BOSSES: {runState.bossesKilled}   STAFF: {runState.staffSaved}   SPHERES: {runState.spheresRestored}";
-            }
-
+            SetTextIfChanged(waveText, $"{PortalNightsLocalization.Text("hud.universe")} {Mathf.Max(1, runState.universeIndex)} {PortalNightsLocalization.Text("hud.universeComplete")}");
+            SetTextIfChanged(enemiesText, $"{PortalNightsLocalization.Text("hud.score")}: {PortalNightsScoreCalculator.CalculateSummaryScore(runState)}   {PortalNightsLocalization.Text("hud.time")}: {FormatTime(runState.totalRunTime)}");
+            SetTextIfChanged(laneText, $"{PortalNightsLocalization.Text("hud.enemies")}: {runState.enemiesKilled + runState.enhancedEnemiesKilled}   {PortalNightsLocalization.Text("hud.bosses")}: {runState.bossesKilled}   {PortalNightsLocalization.Text("hud.staff")}: {runState.staffSaved}   {PortalNightsLocalization.Text("hud.spheres")}: {runState.spheresRestored}");
             ShowLocalLeaderboard(topEntries);
         }
 
@@ -120,27 +117,12 @@ namespace PortalNights
             }
 
             runState.UpdateTotalRunTime();
-            if (waveText != null)
-            {
-                waveText.text = "UNIVERSE COMPLETE";
-            }
-
-            if (enemiesText != null)
-            {
-                enemiesText.text = $"FINAL SCORE: {PortalNightsScoreCalculator.CalculateSummaryScore(runState)}   UNIVERSE: {Mathf.Max(1, runState.universeIndex)}   TIME: {FormatTime(runState.totalRunTime)}";
-            }
-
-            if (laneText != null)
-            {
-                laneText.text = $"ENEMIES: {runState.enemiesKilled + runState.enhancedEnemiesKilled}   BOSSES: {runState.bossesKilled}   STAFF: {runState.staffSaved}   SPHERES: {runState.spheresRestored}   DEATHS: {runState.playerDeaths}   TURRETS: {runState.turretsBuilt}/{runState.turretsUpgraded}";
-            }
-
-            if (promptText != null)
-            {
-                promptText.text = universeCompleteLeaderboardVisible && !string.IsNullOrWhiteSpace(leaderboardText)
-                    ? leaderboardText
-                    : BuildUniverseCompleteControlsText(runState);
-            }
+            SetTextIfChanged(waveText, PortalNightsLocalization.Text("hud.universeComplete"));
+            SetTextIfChanged(enemiesText, $"{PortalNightsLocalization.Text("hud.finalScore")}: {PortalNightsScoreCalculator.CalculateSummaryScore(runState)}   {PortalNightsLocalization.Text("hud.universe")}: {Mathf.Max(1, runState.universeIndex)}   {PortalNightsLocalization.Text("hud.time")}: {FormatTime(runState.totalRunTime)}");
+            SetTextIfChanged(laneText, $"{PortalNightsLocalization.Text("hud.enemies")}: {runState.enemiesKilled + runState.enhancedEnemiesKilled}   {PortalNightsLocalization.Text("hud.bosses")}: {runState.bossesKilled}   {PortalNightsLocalization.Text("hud.staff")}: {runState.staffSaved}   {PortalNightsLocalization.Text("hud.spheres")}: {runState.spheresRestored}   {PortalNightsLocalization.Text("hud.deaths")}: {runState.playerDeaths}   {PortalNightsLocalization.Text("hud.turrets")}: {runState.turretsBuilt}/{runState.turretsUpgraded}");
+            SetTextIfChanged(promptText, universeCompleteLeaderboardVisible && !string.IsNullOrWhiteSpace(leaderboardText)
+                ? PortalNightsLocalization.LocalizeRuntimeText(leaderboardText)
+                : BuildUniverseCompleteControlsText(runState));
         }
 
         public void ShowLocalLeaderboard(IReadOnlyList<PortalNightsLeaderboardEntry> topEntries)
@@ -150,7 +132,7 @@ namespace PortalNights
                 return;
             }
 
-            StringBuilder builder = new StringBuilder("LOCAL LEADERBOARD");
+            StringBuilder builder = new StringBuilder(PortalNightsLocalization.Text("hud.localLeaderboard"));
             int count = Mathf.Min(5, topEntries.Count);
             for (int i = 0; i < count; i++)
             {
@@ -163,20 +145,27 @@ namespace PortalNights
                 builder.AppendLine();
                 builder.Append(i + 1);
                 builder.Append(". ");
-                builder.Append(string.IsNullOrWhiteSpace(entry.playerName) ? "Commander" : entry.playerName);
+                builder.Append(string.IsNullOrWhiteSpace(entry.playerName) ? PortalNightsLocalization.Text("hud.defaultPlayerName") : entry.playerName);
                 builder.Append("  ");
                 builder.Append(entry.score);
-                builder.Append("  U");
+                builder.Append("  ВС");
                 builder.Append(entry.universe);
                 builder.Append("  ");
                 builder.Append(FormatTime(entry.totalTime));
-                builder.Append("  E");
+                builder.Append("  В");
                 builder.Append(entry.enemiesKilled);
-                builder.Append("  B");
+                builder.Append("  Б");
                 builder.Append(entry.bossesKilled);
             }
 
-            promptText.text = builder.ToString();
+            SetTextIfChanged(promptText, builder.ToString());
+        }
+
+        public static int ConsumeTextWriteCount()
+        {
+            int count = textWritesSinceLastSample;
+            textWritesSinceLastSample = 0;
+            return count;
         }
 
         private void UpdateLeaderboardToggle()
@@ -192,6 +181,7 @@ namespace PortalNights
                 if (Keyboard.current.lKey.wasPressedThisFrame)
                 {
                     universeCompleteLeaderboardVisible = !universeCompleteLeaderboardVisible;
+                    refreshTimer = 0f;
                 }
             }
             else
@@ -205,32 +195,44 @@ namespace PortalNights
         {
             if (runState == null)
             {
-                return "E ENTER NEXT UNIVERSE   L LOCAL LEADERBOARD";
+                return PortalNightsLocalization.Format("hud.enterNextUniverse", 2) + "   " + PortalNightsLocalization.Text("hud.showHideLeaderboard");
             }
 
             StringBuilder builder = new StringBuilder();
-            builder.AppendLine("RUN SUMMARY");
-            builder.Append("SCORE: ");
+            builder.AppendLine(PortalNightsLocalization.Text("hud.runSummary"));
+            builder.Append(PortalNightsLocalization.Text("hud.score"));
+            builder.Append(": ");
             builder.Append(PortalNightsScoreCalculator.CalculateSummaryScore(runState));
-            builder.Append("   TIME: ");
+            builder.Append("   ");
+            builder.Append(PortalNightsLocalization.Text("hud.time"));
+            builder.Append(": ");
             builder.AppendLine(FormatTime(runState.totalRunTime));
-            builder.Append("ENEMIES KILLED: ");
+            builder.Append(PortalNightsLocalization.Text("hud.enemiesKilled"));
+            builder.Append(": ");
             builder.Append(runState.enemiesKilled + runState.enhancedEnemiesKilled);
-            builder.Append("   BOSSES DEFEATED: ");
+            builder.Append("   ");
+            builder.Append(PortalNightsLocalization.Text("hud.bossesDefeated"));
+            builder.Append(": ");
             builder.AppendLine(runState.bossesKilled.ToString());
-            builder.Append("STAFF SAVED: ");
+            builder.Append(PortalNightsLocalization.Text("hud.staffSaved"));
+            builder.Append(": ");
             builder.Append(runState.staffSaved);
-            builder.Append("   SPHERES RESTORED: ");
+            builder.Append("   ");
+            builder.Append(PortalNightsLocalization.Text("hud.spheresRestored"));
+            builder.Append(": ");
             builder.Append(runState.spheresRestored);
-            builder.Append("   DEATHS: ");
+            builder.Append("   ");
+            builder.Append(PortalNightsLocalization.Text("hud.deaths"));
+            builder.Append(": ");
             builder.AppendLine(runState.playerDeaths.ToString());
-            builder.Append("TURRETS BUILT/UPGRADED: ");
+            builder.Append(PortalNightsLocalization.Text("hud.turretsBuiltUpgraded"));
+            builder.Append(": ");
             builder.Append(runState.turretsBuilt);
             builder.Append("/");
             builder.AppendLine(runState.turretsUpgraded.ToString());
-            builder.Append("E NEAR PORTAL: ENTER UNIVERSE ");
-            builder.Append(Mathf.Max(2, runState.universeIndex + 1));
-            builder.Append("   L: LOCAL LEADERBOARD");
+            builder.Append(PortalNightsLocalization.Format("hud.enterNextUniverse", Mathf.Max(2, runState.universeIndex + 1)));
+            builder.Append("   ");
+            builder.Append(PortalNightsLocalization.Text("hud.showHideLeaderboard"));
             return builder.ToString();
         }
 
@@ -258,172 +260,170 @@ namespace PortalNights
             PortalNightsHealth coreHealth = planet5 ? controller.Planet5SphereHealth : planet3 ? controller.RelaySphereHealth : controller.CoreHealth;
             PortalNightsHealth playerHealth = player == null ? null : player.Health;
 
-            if (waveText != null)
+            SetTextIfChanged(waveText, BuildWaveText());
+            SetTextIfChanged(enemiesText, BuildEnemiesText(planet3, planet4, planet5));
+            SetTextIfChanged(laneText, BuildLaneText(planet3, planet4, planet5));
+            SetTextIfChanged(coinsText, $"{PortalNightsLocalization.Text("hud.coins")}: {controller.Coins}   ВС{controller.UniverseIndex}");
+            UpdateHealth(coreHealth, playerHealth, planet3, planet5);
+            SetTextIfChanged(promptText, BuildPrompt(player));
+        }
+
+        private string BuildWaveText()
+        {
+            if (controller.GameOver)
             {
-                if (controller.GameOver)
-                {
-                    waveText.text = PortalNightsLocalization.Text("hud.gameOver");
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet1_RewardChoice)
-                {
-                    waveText.text = "CHOOSE REWARD";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet1_PortalReady)
-                {
-                    waveText.text = "PORTAL READY";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet2_ClearArea)
-                {
-                    waveText.text = "PLANET 2: CRYSTAL MOON";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet2_SphereReady)
-                {
-                    waveText.text = "SPHERE READY";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet2_DefendSphere)
-                {
-                    waveText.text = "DEFEND THE SPHERE";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet2_Cleared)
-                {
-                    waveText.text = "PLANET CLEARED";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet3_Arrival || controller.GameState == PortalNightsGameState.Planet3_FindStaff || controller.GameState == PortalNightsGameState.Planet3_ReleaseStaff || controller.GameState == PortalNightsGameState.Planet3_EscortToSphere)
-                {
-                    waveText.text = "PLANET 3 - ASH RELAY STATION";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet3_SphereReady || controller.GameState == PortalNightsGameState.Planet3_SphereActivation)
-                {
-                    waveText.text = "RELAY SPHERE READY";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet3_DefensePreparation)
-                {
-                    waveText.text = $"PREPARE DEFENSE {Mathf.CeilToInt(controller.Planet3PreparationTimer)}";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet3_DefendSphere)
-                {
-                    waveText.text = $"RELAY CHARGE {Mathf.CeilToInt(controller.Planet3RelayCharge)}%";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet3_Cleared)
-                {
-                    waveText.text = "PLANET 3 CLEARED";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet3_Failed)
-                {
-                    waveText.text = "RELAY DESTROYED - PRESS R";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet4_Arrival || controller.GameState == PortalNightsGameState.Planet4_HordeActive || controller.GameState == PortalNightsGameState.Planet4_RiftClosing)
-                {
-                    waveText.text = "PLANET 4 - SWARM EXPANSE";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet4_ExitPortalReady)
-                {
-                    waveText.text = "PLANET 5 PORTAL OPEN";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet4_Cleared)
-                {
-                    waveText.text = "PLANET 4 CLEARED";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet4_Failed)
-                {
-                    waveText.text = "SWARM OVERRUN - PRESS R";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet5_Arrival || controller.GameState == PortalNightsGameState.Planet5_BossIntro)
-                {
-                    waveText.text = "PLANET 5 - CRIMSON SINGULARITY";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet5_DestroyHealingSphere)
-                {
-                    waveText.text = "DESTROY THE HEALING SPHERE";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet5_KillBosses)
-                {
-                    waveText.text = "HEALING DISABLED - KILL THE BOSSES";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet5_RestoreSphereReady)
-                {
-                    waveText.text = "BOSSES DEFEATED - RESTORE THE SPHERE";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet5_RestoringSphere)
-                {
-                    waveText.text = "RESTORING SPHERE";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet5_SphereRestored)
-                {
-                    waveText.text = "SPHERE RESTORED";
-                }
-                else if (controller.GameState == PortalNightsGameState.Planet5_Failed)
-                {
-                    waveText.text = "CRIMSON SINGULARITY LOST - PRESS R";
-                }
-                else if (controller.GameState == PortalNightsGameState.Failed)
-                {
-                    waveText.text = "SPHERE LOST - PRESS R";
-                }
-                else if (!controller.WaveRunning && controller.NextWaveTimer > 0.05f)
-                {
-                    waveText.text = $"{PortalNightsLocalization.Text("hud.wait")} {Mathf.CeilToInt(controller.NextWaveTimer)}";
-                }
-                else
-                {
-                    waveText.text = $"{PortalNightsLocalization.Text("hud.wave")} {controller.WaveNumber}";
-                }
+                return PortalNightsLocalization.Text("hud.gameOver");
             }
 
-            if (enemiesText != null)
+            switch (controller.GameState)
             {
-                enemiesText.text = planet3
-                    ? $"OBJECTIVE: RELAY SPHERE   ENEMIES: {controller.EnemiesRemaining}"
-                    : planet4
-                    ? $"ENEMIES DEFEATED: {controller.Planet4EnemiesDefeated}/{controller.Planet4TargetKills}"
-                    : planet5
-                    ? controller.GameState == PortalNightsGameState.Planet5_DestroyHealingSphere
-                        ? $"SPHERE HP: {FormatHealth(controller.Planet5SphereHealth)}   BOSSES CANNOT DIE"
-                        : controller.GameState == PortalNightsGameState.Planet5_RestoreSphereReady || controller.GameState == PortalNightsGameState.Planet5_RestoringSphere
-                        ? $"STABILIZERS: {controller.Planet5StabilizersCompleted}/{controller.Planet5StabilizersTotal}"
-                        : controller.GameState == PortalNightsGameState.Planet5_SphereRestored
-                        ? "SPHERE RESTORED   UNIVERSE STABILIZED"
-                        : $"BOSSES DEFEATED: {controller.Planet5BossesDefeated}/2"
-                    : controller.GameState == PortalNightsGameState.Planet2_ClearArea
-                    ? $"OBJECTIVE: CLEAR THE AREA   ENEMIES: {controller.EnemiesRemaining}"
-                    : $"{PortalNightsLocalization.Text("hud.enemies")}: {controller.EnemiesRemaining}";
+                case PortalNightsGameState.Planet1_RewardChoice:
+                    return PortalNightsLocalization.Text("hud.chooseReward");
+                case PortalNightsGameState.Planet1_PortalReady:
+                    return PortalNightsLocalization.Text("hud.portalReady");
+                case PortalNightsGameState.Planet2_ClearArea:
+                    return PortalNightsLocalization.Text("hud.planet2");
+                case PortalNightsGameState.Planet2_SphereReady:
+                    return PortalNightsLocalization.Text("hud.sphereReady");
+                case PortalNightsGameState.Planet2_DefendSphere:
+                    return PortalNightsLocalization.Text("hud.defendSphere");
+                case PortalNightsGameState.Planet2_Cleared:
+                    return PortalNightsLocalization.Text("hud.planetCleared");
+                case PortalNightsGameState.Planet3_Arrival:
+                case PortalNightsGameState.Planet3_FindStaff:
+                case PortalNightsGameState.Planet3_ReleaseStaff:
+                case PortalNightsGameState.Planet3_EscortToSphere:
+                    return PortalNightsLocalization.Text("hud.planet3");
+                case PortalNightsGameState.Planet3_SphereReady:
+                case PortalNightsGameState.Planet3_SphereActivation:
+                    return PortalNightsLocalization.Text("hud.relaySphereReady");
+                case PortalNightsGameState.Planet3_DefensePreparation:
+                    return PortalNightsLocalization.Format("hud.prepareDefense", Mathf.CeilToInt(controller.Planet3PreparationTimer));
+                case PortalNightsGameState.Planet3_DefendSphere:
+                    return PortalNightsLocalization.Format("hud.relayCharge", Mathf.CeilToInt(controller.Planet3RelayCharge));
+                case PortalNightsGameState.Planet3_Cleared:
+                    return PortalNightsLocalization.Text("hud.planet3Cleared");
+                case PortalNightsGameState.Planet3_Failed:
+                    return PortalNightsLocalization.Text("hud.relayDestroyed");
+                case PortalNightsGameState.Planet4_Arrival:
+                case PortalNightsGameState.Planet4_HordeActive:
+                case PortalNightsGameState.Planet4_RiftClosing:
+                    return PortalNightsLocalization.Text("hud.planet4");
+                case PortalNightsGameState.Planet4_ExitPortalReady:
+                    return PortalNightsLocalization.Text("hud.planet4Portal");
+                case PortalNightsGameState.Planet4_Cleared:
+                    return PortalNightsLocalization.Text("hud.planet4Cleared");
+                case PortalNightsGameState.Planet4_Failed:
+                    return PortalNightsLocalization.Text("hud.swarmOverrun");
+                case PortalNightsGameState.Planet5_Arrival:
+                case PortalNightsGameState.Planet5_BossIntro:
+                    return PortalNightsLocalization.Text("hud.planet5");
+                case PortalNightsGameState.Planet5_DestroyHealingSphere:
+                    return PortalNightsLocalization.Text("hud.destroyHealingSphere");
+                case PortalNightsGameState.Planet5_KillBosses:
+                    return PortalNightsLocalization.Text("hud.killBosses");
+                case PortalNightsGameState.Planet5_RestoreSphereReady:
+                    return PortalNightsLocalization.Text("hud.restoreSphere");
+                case PortalNightsGameState.Planet5_RestoringSphere:
+                    return PortalNightsLocalization.Text("hud.restoringSphere");
+                case PortalNightsGameState.Planet5_SphereRestored:
+                    return PortalNightsLocalization.Text("hud.sphereRestored");
+                case PortalNightsGameState.Planet5_Failed:
+                    return PortalNightsLocalization.Text("hud.crimsonLost");
+                case PortalNightsGameState.Failed:
+                    return PortalNightsLocalization.Text("hud.sphereLost");
             }
 
-            if (laneText != null)
+            if (!controller.WaveRunning && controller.NextWaveTimer > 0.05f)
             {
-                if (controller.GameState == PortalNightsGameState.Planet1_Defense || controller.GameState == PortalNightsGameState.Planet1_RewardChoice || controller.GameState == PortalNightsGameState.Planet1_PortalReady)
+                return $"{PortalNightsLocalization.Text("hud.wait")} {Mathf.CeilToInt(controller.NextWaveTimer)}";
+            }
+
+            return $"{PortalNightsLocalization.Text("hud.wave")} {controller.WaveNumber}";
+        }
+
+        private string BuildEnemiesText(bool planet3, bool planet4, bool planet5)
+        {
+            if (planet3)
+            {
+                return $"{PortalNightsLocalization.Text("hud.objective")}: {PortalNightsLocalization.Text("hud.objectiveRelay")}   {PortalNightsLocalization.Text("hud.enemies")}: {controller.EnemiesRemaining}";
+            }
+
+            if (planet4)
+            {
+                return $"{PortalNightsLocalization.Text("hud.enemiesDefeated")}: {controller.Planet4EnemiesDefeated}/{controller.Planet4TargetKills}";
+            }
+
+            if (planet5)
+            {
+                if (controller.GameState == PortalNightsGameState.Planet5_DestroyHealingSphere)
                 {
-                    string portal = controller.PortalReady ? "PORTAL READY" : "PORTAL LOCKED";
-                    laneText.text = $"U{controller.UniverseIndex} P{controller.CurrentPlanetIndex}   SCORE: {controller.CurrentScore}   TURRETS: {controller.RequiredTurretsBuilt}/{controller.RequiredTurretsTotal} BUILT   UPGRADES: {controller.RequiredTurretsMaxed}/{controller.RequiredTurretsTotal} MAX   {portal}";
+                    return $"{PortalNightsLocalization.Text("hud.sphereHp")}: {FormatHealth(controller.Planet5SphereHealth)}   {PortalNightsLocalization.Text("hud.bossesCannotDie")}";
                 }
-                else
+
+                if (controller.GameState == PortalNightsGameState.Planet5_RestoreSphereReady || controller.GameState == PortalNightsGameState.Planet5_RestoringSphere)
                 {
-                    laneText.text = planet3
-                        ? $"STAFF RESCUED: {controller.Planet3StaffRescued}/2   STAFF AT SPHERE: {controller.Planet3StaffAtSphere}/2   CHARGE: {Mathf.CeilToInt(controller.Planet3RelayCharge)}%   RIFTS: {controller.Planet3ActiveRifts}"
-                        : planet4
-                        ? $"RIFTS CLOSED: {controller.Planet4RiftsClosed}/{controller.Planet4RiftsTotal}   ACTIVE RIFTS: {controller.Planet4ActiveRifts}   SCORE: {controller.CurrentScore}"
-                        : planet5
-                        ? controller.GameState == PortalNightsGameState.Planet5_RestoreSphereReady || controller.GameState == PortalNightsGameState.Planet5_RestoringSphere
-                            ? $"STABILIZERS: {controller.Planet5StabilizersCompleted}/{controller.Planet5StabilizersTotal}   HOLD: {Mathf.CeilToInt(controller.Planet5StabilizerHoldProgress * 100f)}%"
-                            : $"SOLAR: {FormatHealth(controller.Planet5BossAHealth)}   BEHEMOTH: {FormatHealth(controller.Planet5BossBHealth)}   ALLIES: {FormatHealth(controller.Planet5Helper1Health)} / {FormatHealth(controller.Planet5Helper2Health)}"
-                        : controller.GameState == PortalNightsGameState.Planet2_DefendSphere
-                        ? "OBJECTIVE: DEFEND THE SPHERE"
-                        : controller.GameState.ToString().Replace('_', ' ');
+                    return $"{PortalNightsLocalization.Text("hud.stabilizers")}: {controller.Planet5StabilizersCompleted}/{controller.Planet5StabilizersTotal}";
                 }
+
+                if (controller.GameState == PortalNightsGameState.Planet5_SphereRestored)
+                {
+                    return $"{PortalNightsLocalization.Text("hud.sphereRestored")}   {PortalNightsLocalization.Text("hud.universeStabilized")}";
+                }
+
+                return $"{PortalNightsLocalization.Text("hud.bossesDefeated")}: {controller.Planet5BossesDefeated}/2";
             }
 
-            if (coinsText != null)
+            if (controller.GameState == PortalNightsGameState.Planet2_ClearArea)
             {
-                coinsText.text = $"{PortalNightsLocalization.Text("hud.coins")}: {controller.Coins}   U{controller.UniverseIndex}";
+                return $"{PortalNightsLocalization.Text("hud.objective")}: {PortalNightsLocalization.Text("hud.objectiveClearArea")}   {PortalNightsLocalization.Text("hud.enemies")}: {controller.EnemiesRemaining}";
             }
 
+            return $"{PortalNightsLocalization.Text("hud.enemies")}: {controller.EnemiesRemaining}";
+        }
+
+        private string BuildLaneText(bool planet3, bool planet4, bool planet5)
+        {
+            if (controller.GameState == PortalNightsGameState.Planet1_Defense || controller.GameState == PortalNightsGameState.Planet1_RewardChoice || controller.GameState == PortalNightsGameState.Planet1_PortalReady)
+            {
+                string portal = controller.PortalReady ? PortalNightsLocalization.Text("hud.portalReady") : PortalNightsLocalization.Text("hud.portalLocked");
+                return $"ВС{controller.UniverseIndex} П{controller.CurrentPlanetIndex}   {PortalNightsLocalization.Text("hud.score")}: {controller.CurrentScore}   {PortalNightsLocalization.Text("hud.turrets")}: {controller.RequiredTurretsBuilt}/{controller.RequiredTurretsTotal}   {PortalNightsLocalization.Text("hud.upgrades")}: {controller.RequiredTurretsMaxed}/{controller.RequiredTurretsTotal}   {portal}";
+            }
+
+            if (planet3)
+            {
+                return $"{PortalNightsLocalization.Text("hud.staffRescued")}: {controller.Planet3StaffRescued}/2   {PortalNightsLocalization.Text("hud.staffAtSphere")}: {controller.Planet3StaffAtSphere}/2   {PortalNightsLocalization.Text("hud.charge")}: {Mathf.CeilToInt(controller.Planet3RelayCharge)}%   {PortalNightsLocalization.Text("hud.rifts")}: {controller.Planet3ActiveRifts}";
+            }
+
+            if (planet4)
+            {
+                return $"{PortalNightsLocalization.Text("hud.riftsClosed")}: {controller.Planet4RiftsClosed}/{controller.Planet4RiftsTotal}   {PortalNightsLocalization.Text("hud.activeRifts")}: {controller.Planet4ActiveRifts}   {PortalNightsLocalization.Text("hud.score")}: {controller.CurrentScore}";
+            }
+
+            if (planet5)
+            {
+                if (controller.GameState == PortalNightsGameState.Planet5_RestoreSphereReady || controller.GameState == PortalNightsGameState.Planet5_RestoringSphere)
+                {
+                    return $"{PortalNightsLocalization.Text("hud.stabilizers")}: {controller.Planet5StabilizersCompleted}/{controller.Planet5StabilizersTotal}   {PortalNightsLocalization.Text("hud.hold")}: {Mathf.CeilToInt(controller.Planet5StabilizerHoldProgress * 100f)}%";
+                }
+
+                return $"{PortalNightsLocalization.Text("hud.solar")}: {FormatHealth(controller.Planet5BossAHealth)}   {PortalNightsLocalization.Text("hud.behemoth")}: {FormatHealth(controller.Planet5BossBHealth)}   {PortalNightsLocalization.Text("hud.allies")}: {FormatHealth(controller.Planet5Helper1Health)} / {FormatHealth(controller.Planet5Helper2Health)}";
+            }
+
+            if (controller.GameState == PortalNightsGameState.Planet2_DefendSphere)
+            {
+                return $"{PortalNightsLocalization.Text("hud.objective")}: {PortalNightsLocalization.Text("hud.defendSphere")}";
+            }
+
+            return PortalNightsLocalization.StateText(controller.GameState);
+        }
+
+        private void UpdateHealth(PortalNightsHealth coreHealth, PortalNightsHealth playerHealth, bool planet3, bool planet5)
+        {
             if (coreHealth != null)
             {
-                if (coreText != null)
-                {
-                    string healthLabel = planet5 ? "HEALING SPHERE" : planet3 ? "RELAY SPHERE" : PortalNightsLocalization.Text("hud.core");
-                    coreText.text = $"{healthLabel} {Mathf.CeilToInt(coreHealth.CurrentHealth)}/{Mathf.CeilToInt(coreHealth.MaxHealth)}";
-                }
+                string healthLabel = planet5 ? PortalNightsLocalization.Text("hud.healingSphere") : planet3 ? PortalNightsLocalization.Text("hud.objectiveRelay") : PortalNightsLocalization.Text("hud.core");
+                SetTextIfChanged(coreText, $"{healthLabel} {Mathf.CeilToInt(coreHealth.CurrentHealth)}/{Mathf.CeilToInt(coreHealth.MaxHealth)}");
                 if (coreSlider != null)
                 {
                     coreSlider.value = coreHealth.Normalized;
@@ -432,19 +432,11 @@ namespace PortalNights
 
             if (playerHealth != null)
             {
-                if (playerText != null)
-                {
-                    playerText.text = $"{PortalNightsLocalization.Text("hud.player")} {Mathf.CeilToInt(playerHealth.CurrentHealth)}/{Mathf.CeilToInt(playerHealth.MaxHealth)}";
-                }
+                SetTextIfChanged(playerText, $"{PortalNightsLocalization.Text("hud.player")} {Mathf.CeilToInt(playerHealth.CurrentHealth)}/{Mathf.CeilToInt(playerHealth.MaxHealth)}");
                 if (playerSlider != null)
                 {
                     playerSlider.value = playerHealth.Normalized;
                 }
-            }
-
-            if (promptText != null)
-            {
-                promptText.text = BuildPrompt(player);
             }
         }
 
@@ -457,32 +449,32 @@ namespace PortalNights
 
             if (controller.GameState == PortalNightsGameState.Planet1_RewardChoice)
             {
-                return "1  +15% WEAPON DAMAGE     2  +15% TURRET DAMAGE     3  REPAIR CORE +150";
+                return PortalNightsLocalization.Text("hud.rewardOptions");
             }
 
             if (controller.GameState == PortalNightsGameState.Planet1_PortalReady && controller.IsPlayerNearPortal(player.transform.position))
             {
-                return "E ENTER PORTAL";
+                return PortalNightsLocalization.Text("hud.enterPortal");
             }
 
             if (controller.GameState == PortalNightsGameState.Planet2_SphereReady && controller.IsPlayerNearSphere(player.transform.position))
             {
-                return "E ACTIVATE SPHERE";
+                return PortalNightsLocalization.Text("hud.activateSphere");
             }
 
             if (controller.GameState == PortalNightsGameState.Failed)
             {
-                return "SPHERE LOST - PRESS R TO RETRY";
+                return PortalNightsLocalization.Text("hud.sphereLost");
             }
 
             if (controller.GameState == PortalNightsGameState.Planet3_Failed)
             {
-                return "RELAY SPHERE DESTROYED - PRESS R TO RETRY";
+                return PortalNightsLocalization.Text("hud.relayDestroyed");
             }
 
             if (controller.GameState == PortalNightsGameState.Planet5_RestoreSphereReady)
             {
-                return "SPHERE READY FOR RESTORATION";
+                return PortalNightsLocalization.Text("hud.sphereReadyRestore");
             }
 
             string planet4Prompt = controller.GetPlanet4InteractionPrompt(player.transform.position);
@@ -506,7 +498,7 @@ namespace PortalNights
             PortalNightsBuildPoint point = controller.GetClosestBuildPoint(player.transform.position, controller.BuildInteractionRange, false);
             if (point == null || !controller.CanBuildInCurrentState)
             {
-                return "WASD MOVE   MOUSE AIM   LMB/SPACE FIRE   SHIFT SPRINT   E BUILD";
+                return PortalNightsLocalization.Text("hud.controls");
             }
 
             return point.GetInteractionPrompt();
@@ -574,28 +566,6 @@ namespace PortalNights
             GUI.color = previous;
         }
 
-        private void DrawControlsHint()
-        {
-            if (controlsStyle == null)
-            {
-                controlsStyle = new GUIStyle(GUI.skin.label)
-                {
-                    alignment = TextAnchor.LowerRight,
-                    fontSize = Mathf.Clamp(Screen.height / 42, 18, 28),
-                    fontStyle = FontStyle.Bold,
-                    normal =
-                    {
-                        textColor = new Color(0.9f, 0.98f, 1f, 0.92f)
-                    }
-                };
-            }
-
-            string text = controller != null && controller.GameOver
-                ? "R RESTART   ESC CURSOR"
-                : "WASD MOVE   MOUSE AIM   LMB FIRE   E BUILD";
-            GUI.Label(new Rect(Screen.width - 620f, Screen.height - 52f, 590f, 34f), text, controlsStyle);
-        }
-
         private PortalNightsPlayerController GetLocalPlayer()
         {
             NetworkManager manager = NetworkManager.Singleton;
@@ -621,8 +591,26 @@ namespace PortalNights
             toastTimer -= Time.unscaledDeltaTime;
             if (toastTimer <= 0f)
             {
-                toastText.text = string.Empty;
+                SetTextIfChanged(toastText, string.Empty);
             }
+        }
+
+        private static void SetTextIfChanged(Text target, string value)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            value ??= string.Empty;
+            if (target.text == value)
+            {
+                return;
+            }
+
+            target.text = value;
+            textWritesSinceLastSample++;
+            totalTextWrites++;
         }
 
         private static void EnsureInputSystemUiModule()

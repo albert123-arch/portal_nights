@@ -15,6 +15,11 @@ namespace PortalNights
         private static int activeBurstCount;
         private static int burstSpawnsSinceLastSample;
         private static int activeFloatingTextCount;
+        private static long totalBurstSpawns;
+
+        public static int ActiveBurstCount => activeBurstCount;
+        public static int ActiveFloatingTextCount => activeFloatingTextCount;
+        public static long TotalBurstSpawns => totalBurstSpawns;
 
         public static Material GetRuntimeGlowMaterial(Color baseColor, Color emission)
         {
@@ -124,6 +129,7 @@ namespace PortalNights
 
             activeBurstCount++;
             burstSpawnsSinceLastSample++;
+            totalBurstSpawns++;
             pooledBurst.Activate(particleSystem, 1.25f);
             particleSystem.Emit(particles);
         }
@@ -138,7 +144,7 @@ namespace PortalNights
             GameObject textObject = new GameObject("PN_FloatingText");
             textObject.transform.position = position;
             TextMesh textMesh = textObject.AddComponent<TextMesh>();
-            textMesh.text = text;
+            textMesh.text = PortalNightsLocalization.LocalizeRuntimeText(text);
             textMesh.anchor = TextAnchor.MiddleCenter;
             textMesh.alignment = TextAlignment.Center;
             textMesh.characterSize = 0.22f;

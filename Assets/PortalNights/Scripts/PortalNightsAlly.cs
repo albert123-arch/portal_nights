@@ -45,6 +45,7 @@ namespace PortalNights
         private float targetScanTimer;
         private int shotVisualCounter;
         private static int turretShotsSinceLastSample;
+        private static long totalTurretShots;
 
         public int Level => Mathf.Clamp(level.Value, 1, 3);
         public float CurrentDamage => damage;
@@ -57,6 +58,8 @@ namespace PortalNights
             turretShotsSinceLastSample = 0;
             return count;
         }
+
+        public static long TotalTurretShots => totalTurretShots;
 
         private void Awake()
         {
@@ -253,6 +256,7 @@ namespace PortalNights
             int count = Mathf.Clamp(muzzleCount, 1, 3);
             float projectileWidth = shotLevel >= 3 ? 0.115f : 0.075f;
             turretShotsSinceLastSample++;
+            totalTurretShots++;
             shotVisualCounter++;
             if (spawnProjectileTracers)
             {
@@ -287,7 +291,7 @@ namespace PortalNights
             RefreshLevelVisual();
             visualPulse = 0.32f;
             PortalNightsVfx.SpawnBurst(position, GetLevelColor(newLevel), 0.95f + newLevel * 0.18f, 18 + newLevel * 6);
-            PortalNightsVfx.SpawnFloatingText(position + Vector3.up * 0.75f, "LVL " + newLevel, GetLevelColor(newLevel));
+            PortalNightsVfx.SpawnFloatingText(position + Vector3.up * 0.75f, PortalNightsLocalization.Format("toast.level", newLevel), GetLevelColor(newLevel));
         }
 
         private IEnumerator ShowBeams(Vector3 originA, Vector3 originB, Vector3 originC, int muzzleCount, Vector3 targetPoint, Color color, float width)

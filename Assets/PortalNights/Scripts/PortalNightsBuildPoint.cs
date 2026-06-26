@@ -86,15 +86,15 @@ namespace PortalNights
         {
             if (IsAvailable)
             {
-                return $"E BUILD TURRET   COST: {Cost}";
+                return $"{PortalNightsLocalization.Text("hud.buildReady")}   {PortalNightsLocalization.Text("hud.buildCost")}: {Cost}";
             }
 
             if (IsMaxed)
             {
-                return "TURRET MAX LEVEL";
+                return PortalNightsLocalization.Text("hud.turretMaxLevel");
             }
 
-            return $"E UPGRADE TURRET LVL {NextLevel}   COST: {Cost}";
+            return $"{PortalNightsLocalization.Format("hud.upgradeLevelReady", NextLevel)}   {PortalNightsLocalization.Text("hud.buildCost")}: {Cost}";
         }
 
         public void MakeNonBlocking()

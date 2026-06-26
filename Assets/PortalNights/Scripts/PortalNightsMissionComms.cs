@@ -128,8 +128,9 @@ namespace PortalNights
         public void ShowMissionToast(string text)
         {
             EnsureInitialized();
-            objectiveTracker?.ShowToast(text);
-            PortalNightsHud.Instance?.ShowToast(text);
+            string localizedText = PortalNightsLocalization.LocalizeRuntimeText(text);
+            objectiveTracker?.ShowToast(localizedText);
+            PortalNightsHud.Instance?.ShowToast(localizedText);
         }
 
         public void ResetRunPlaybackState()
@@ -232,19 +233,19 @@ namespace PortalNights
         {
             string[] main =
             {
-                "DEFEND THE CORE",
-                "DEFEND THE SPHERE",
-                "RESCUE STAFF",
-                "CLOSE RIFTS",
-                "DESTROY THE CORRUPTED SPHERE"
+                PortalNightsLocalization.Text("objective.defendCore"),
+                PortalNightsLocalization.Text("objective.defendSphere"),
+                PortalNightsLocalization.Text("objective.rescueStaff"),
+                PortalNightsLocalization.Text("objective.closeRifts"),
+                PortalNightsLocalization.Text("objective.destroyCorruptedSphere")
             };
             string[] progress =
             {
-                "WAVE 2/10",
-                "WAVE 2/6",
-                "STAFF RESCUED: 1/2",
-                "RIFTS CLOSED: 3/4",
-                "SPHERE HP: 62%"
+                PortalNightsLocalization.Format("progress.wave", 2, 10),
+                PortalNightsLocalization.Format("progress.wave", 2, 6),
+                PortalNightsLocalization.Format("progress.staffAtSphere", 1),
+                PortalNightsLocalization.Text("hud.riftsClosed") + ": 3/4",
+                PortalNightsLocalization.Text("hud.sphereHp") + ": 62%"
             };
 
             PortalNightsObjectiveSeverity severity = debugObjectiveIndex >= 4

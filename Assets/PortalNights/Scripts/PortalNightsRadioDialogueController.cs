@@ -127,12 +127,12 @@ namespace PortalNights
             targetAlpha = 0f;
             if (speakerText != null)
             {
-                speakerText.text = string.Empty;
+                SetTextIfChanged(speakerText, string.Empty);
             }
 
             if (bodyText != null)
             {
-                bodyText.text = string.Empty;
+                SetTextIfChanged(bodyText, string.Empty);
             }
         }
 
@@ -176,12 +176,12 @@ namespace PortalNights
             targetAlpha = 1f;
             if (speakerText != null)
             {
-                speakerText.text = string.IsNullOrWhiteSpace(line.speaker) ? "SYSTEM" : line.speaker.ToUpperInvariant();
+                SetTextIfChanged(speakerText, string.IsNullOrWhiteSpace(line.speaker) ? PortalNightsLocalization.Text("toast.system") : line.speaker.ToUpperInvariant());
             }
 
             if (bodyText != null)
             {
-                bodyText.text = line.text;
+                SetTextIfChanged(bodyText, line.text);
             }
 
             if (portraitAccent != null)
@@ -203,6 +203,22 @@ namespace PortalNights
             }
 
             return new Color(0.18f, 0.86f, 1f, 0.44f);
+        }
+
+        private static void SetTextIfChanged(Text target, string value)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            value ??= string.Empty;
+            if (target.text == value)
+            {
+                return;
+            }
+
+            target.text = value;
         }
 
         private static Text CreateText(string name, Transform parent, Font font, int fontSize, FontStyle style, Color color)

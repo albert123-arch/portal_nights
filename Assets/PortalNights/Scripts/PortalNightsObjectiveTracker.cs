@@ -94,7 +94,7 @@ namespace PortalNights
             toastRect.anchoredPosition = new Vector2(0f, -154f);
             toastRect.sizeDelta = new Vector2(760f, 48f);
             toastText.alignment = TextAnchor.MiddleCenter;
-            toastText.text = string.Empty;
+            SetTextIfChanged(toastText, string.Empty);
         }
 
         public void SetObjective(string mainText, string progressLine = "", PortalNightsObjectiveSeverity severity = PortalNightsObjectiveSeverity.Normal)
@@ -104,8 +104,10 @@ namespace PortalNights
                 return;
             }
 
-            objectiveText.text = string.IsNullOrWhiteSpace(mainText) ? string.Empty : mainText.Trim();
-            progressText.text = string.IsNullOrWhiteSpace(progressLine) ? string.Empty : progressLine.Trim();
+            string localizedMain = PortalNightsLocalization.LocalizeRuntimeText(mainText);
+            string localizedProgress = PortalNightsLocalization.LocalizeRuntimeText(progressLine);
+            SetTextIfChanged(objectiveText, string.IsNullOrWhiteSpace(localizedMain) ? string.Empty : localizedMain.Trim());
+            SetTextIfChanged(progressText, string.IsNullOrWhiteSpace(localizedProgress) ? string.Empty : localizedProgress.Trim());
             ApplySeverity(severity);
             panelGroup.alpha = string.IsNullOrWhiteSpace(objectiveText.text) ? 0f : 1f;
         }
@@ -114,12 +116,12 @@ namespace PortalNights
         {
             if (objectiveText != null)
             {
-                objectiveText.text = string.Empty;
+                SetTextIfChanged(objectiveText, string.Empty);
             }
 
             if (progressText != null)
             {
-                progressText.text = string.Empty;
+                SetTextIfChanged(progressText, string.Empty);
             }
 
             if (panelGroup != null)
@@ -135,7 +137,8 @@ namespace PortalNights
                 return;
             }
 
-            toastText.text = string.IsNullOrWhiteSpace(text) ? string.Empty : text.Trim();
+            string localizedText = PortalNightsLocalization.LocalizeRuntimeText(text);
+            SetTextIfChanged(toastText, string.IsNullOrWhiteSpace(localizedText) ? string.Empty : localizedText.Trim());
             toastTimer = string.IsNullOrWhiteSpace(toastText.text) ? 0f : 2.6f;
         }
 
@@ -152,10 +155,26 @@ namespace PortalNights
             toastText.color = color;
             if (toastTimer <= 0f)
             {
-                toastText.text = string.Empty;
+                SetTextIfChanged(toastText, string.Empty);
                 color.a = 1f;
                 toastText.color = color;
             }
+        }
+
+        private static void SetTextIfChanged(Text target, string value)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            value ??= string.Empty;
+            if (target.text == value)
+            {
+                return;
+            }
+
+            target.text = value;
         }
 
         private void ApplySeverity(PortalNightsObjectiveSeverity severity)

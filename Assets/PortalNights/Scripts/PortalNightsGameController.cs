@@ -87,6 +87,7 @@ namespace PortalNights
 
         [Header("Diagnostics")]
         [SerializeField] private bool performanceDebug;
+        [SerializeField] private bool debugObjectiveReminders;
         [SerializeField] private bool hardDisableInactivePlanetRoots = true;
 
         private readonly List<PortalNightsEnemy> enemies = new List<PortalNightsEnemy>();
@@ -298,12 +299,23 @@ namespace PortalNights
         public PortalNightsRunState RunState => runState;
         public string UniverseCompleteLeaderboardText => universeCompleteLeaderboardText;
         public bool IsPlanet5BossCombatActive => GameState == PortalNightsGameState.Planet5_DestroyHealingSphere || GameState == PortalNightsGameState.Planet5_KillBosses;
+        public bool PerformanceDebugEnabled => performanceDebug;
+        public int ActivePlanetEnvironmentIndex => activePlanetEnvironmentIndex;
         private PortalNightsUniverseScaling CurrentScaling => PortalNightsUniverseScaling.ForUniverse(runState == null ? 1 : runState.universeIndex);
 
         private void Awake()
         {
             Instance = this;
+            EnsureFreezeRecorder();
             CacheSceneReferences();
+        }
+
+        private void EnsureFreezeRecorder()
+        {
+            if (GetComponent<PortalNightsFreezeRecorder>() == null)
+            {
+                gameObject.AddComponent<PortalNightsFreezeRecorder>();
+            }
         }
 
         private void Start()
@@ -476,7 +488,7 @@ namespace PortalNights
             TickReminderTimer(ref planet2SphereReadyReminderTimer, ref planet2SphereReadyReminderStarted, "P2 activate sphere");
             if (planet2SphereReadyReminderTimer >= 20f)
             {
-                PlayReminderDialogueServer("p02_activate_sphere_hint_001", "ACTIVATE THE SPHERE", string.Empty, PortalNightsObjectiveSeverity.Warning);
+                PlayReminderDialogueServer("p02_activate_sphere_hint_001", PortalNightsLocalization.Text("objective.activateSphere"), string.Empty, PortalNightsObjectiveSeverity.Warning);
                 planet2SphereReadyReminderTimer = 0f;
             }
         }
@@ -500,7 +512,7 @@ namespace PortalNights
                 TickReminderTimer(ref planet3NoStaffReminderTimer, ref planet3NoStaffReminderStarted, "P3 find staff");
                 if (planet3NoStaffReminderTimer >= 30f)
                 {
-                    PlayReminderDialogueServer("p03_rescue_staff_hint_001", "RESCUE STAFF", "STAFF RESCUED: " + planet3StaffAtSphere.Value + "/2", PortalNightsObjectiveSeverity.Warning);
+                    PlayReminderDialogueServer("p03_rescue_staff_hint_001", PortalNightsLocalization.Text("objective.rescueStaff"), PortalNightsLocalization.Format("progress.staffAtSphere", planet3StaffAtSphere.Value), PortalNightsObjectiveSeverity.Warning);
                     planet3NoStaffReminderTimer = 0f;
                 }
             }
@@ -515,7 +527,7 @@ namespace PortalNights
                 TickReminderTimer(ref planet3EscortStaffReminderTimer, ref planet3EscortStaffReminderStarted, "P3 escort staff");
                 if (planet3EscortStaffReminderTimer >= 25f)
                 {
-                    PlayReminderDialogueServer("p03_escort_staff_hint_001", "RESCUE STAFF", "STAFF AT SPHERE: " + planet3StaffAtSphere.Value + "/2", PortalNightsObjectiveSeverity.Warning);
+                    PlayReminderDialogueServer("p03_escort_staff_hint_001", PortalNightsLocalization.Text("objective.rescueStaff"), PortalNightsLocalization.Format("progress.staffAtSphere", planet3StaffAtSphere.Value), PortalNightsObjectiveSeverity.Warning);
                     planet3EscortStaffReminderTimer = 0f;
                 }
             }
@@ -549,7 +561,7 @@ namespace PortalNights
             TickReminderTimer(ref planet4CloseRiftReminderTimer, ref planet4CloseRiftReminderStarted, "P4 close rift");
             if (planet4CloseRiftReminderTimer >= 20f)
             {
-                PlayReminderDialogueServer("p04_close_rift_hint_001", "CLOSE RIFTS", "RIFTS CLOSED: " + planet4RiftsClosed.Value + "/4", PortalNightsObjectiveSeverity.Warning);
+                PlayReminderDialogueServer("p04_close_rift_hint_001", PortalNightsLocalization.Text("objective.closeRifts"), PortalNightsLocalization.Text("hud.riftsClosed") + ": " + planet4RiftsClosed.Value + "/4", PortalNightsObjectiveSeverity.Warning);
                 planet4CloseRiftReminderTimer = 0f;
             }
         }
@@ -565,7 +577,7 @@ namespace PortalNights
             TickReminderTimer(ref planet5RestoreSphereReminderTimer, ref planet5RestoreSphereReminderStarted, "P5 restore sphere");
             if (planet5RestoreSphereReminderTimer >= 20f)
             {
-                PlayReminderDialogueServer("p05_restore_sphere_hint_001", "RESTORE THE SPHERE", "STABILIZERS: " + planet5StabilizersCompleted.Value + "/" + Planet5StabilizersTotal, PortalNightsObjectiveSeverity.Warning);
+                PlayReminderDialogueServer("p05_restore_sphere_hint_001", PortalNightsLocalization.Text("objective.restoreSphere"), PortalNightsLocalization.Format("progress.stabilizers", planet5StabilizersCompleted.Value, Planet5StabilizersTotal), PortalNightsObjectiveSeverity.Warning);
                 planet5RestoreSphereReminderTimer = 0f;
             }
         }
@@ -586,7 +598,11 @@ namespace PortalNights
 
         private void PlayReminderDialogueServer(string dialogueId, string objectiveMain, string objectiveProgress, PortalNightsObjectiveSeverity severity)
         {
-            Debug.Log("[PortalNights] Objective reminder plays: " + dialogueId, this);
+            if (debugObjectiveReminders)
+            {
+                Debug.Log("[PortalNights] Objective reminder plays: " + dialogueId, this);
+            }
+
             MissionDialogueClientRpc(dialogueId, objectiveMain ?? string.Empty, objectiveProgress ?? string.Empty, (int)severity);
         }
 
@@ -594,7 +610,11 @@ namespace PortalNights
         {
             if (!started)
             {
-                Debug.Log("[PortalNights] Objective reminder timer started: " + label, this);
+                if (debugObjectiveReminders)
+                {
+                    Debug.Log("[PortalNights] Objective reminder timer started: " + label, this);
+                }
+
                 started = true;
                 timer = 0f;
             }
@@ -606,7 +626,10 @@ namespace PortalNights
         {
             if (started)
             {
-                Debug.Log("[PortalNights] Objective reminder timer reset: " + label, this);
+                if (debugObjectiveReminders)
+                {
+                    Debug.Log("[PortalNights] Objective reminder timer reset: " + label, this);
+                }
             }
 
             timer = 0f;
@@ -656,99 +679,99 @@ namespace PortalNights
             switch (GameState)
             {
                 case PortalNightsGameState.Planet1_Defense:
-                    main = "DEFEND THE CORE";
-                    progress = waveRunning.Value ? "WAVE " + WaveNumber + "/" + planet1FinalWave : "NEXT WAVE IN " + Mathf.CeilToInt(nextWaveTimer.Value);
+                    main = PortalNightsLocalization.Text("objective.defendCore");
+                    progress = waveRunning.Value ? PortalNightsLocalization.Format("progress.wave", WaveNumber, planet1FinalWave) : PortalNightsLocalization.Format("progress.nextWave", Mathf.CeilToInt(nextWaveTimer.Value));
                     return true;
                 case PortalNightsGameState.Planet1_RewardChoice:
-                    main = "CHOOSE REWARD";
-                    progress = "PRESS 1 / 2 / 3";
+                    main = PortalNightsLocalization.Text("objective.chooseReward");
+                    progress = PortalNightsLocalization.Text("progress.pressRewards");
                     severity = PortalNightsObjectiveSeverity.Warning;
                     return true;
                 case PortalNightsGameState.Planet1_PortalReady:
-                    main = "ENTER THE PORTAL";
-                    progress = "ALL REQUIRED TURRETS ONLINE";
+                    main = PortalNightsLocalization.Text("objective.enterPortal");
+                    progress = PortalNightsLocalization.Text("progress.requiredTurrets");
                     severity = PortalNightsObjectiveSeverity.Warning;
                     return true;
                 case PortalNightsGameState.Planet2_ClearArea:
-                    main = "CLEAR THE AREA";
-                    progress = "ENEMIES: " + enemiesRemaining.Value;
+                    main = PortalNightsLocalization.Text("objective.clearArea");
+                    progress = PortalNightsLocalization.Format("progress.enemies", enemiesRemaining.Value);
                     return true;
                 case PortalNightsGameState.Planet2_SphereReady:
-                    main = "ACTIVATE THE SPHERE";
-                    progress = "HOLD POSITION AT THE CORE";
+                    main = PortalNightsLocalization.Text("objective.activateSphere");
+                    progress = PortalNightsLocalization.Text("progress.holdCore");
                     severity = PortalNightsObjectiveSeverity.Warning;
                     return true;
                 case PortalNightsGameState.Planet2_DefendSphere:
-                    main = "DEFEND THE SPHERE";
-                    progress = "WAVE " + Mathf.Clamp(planet2DefenseWaveIndex, 1, 3) + "/3";
+                    main = PortalNightsLocalization.Text("objective.defendSphere");
+                    progress = PortalNightsLocalization.Format("progress.wave", Mathf.Clamp(planet2DefenseWaveIndex, 1, 3), 3);
                     severity = PortalNightsObjectiveSeverity.Warning;
                     return true;
                 case PortalNightsGameState.Planet2_Cleared:
-                    main = "AREA CLEARED";
-                    progress = "NEXT PLANET ONLINE";
+                    main = PortalNightsLocalization.Text("objective.areaCleared");
+                    progress = PortalNightsLocalization.Text("progress.nextPlanetOnline");
                     return true;
                 case PortalNightsGameState.Planet3_FindStaff:
                 case PortalNightsGameState.Planet3_ReleaseStaff:
                 case PortalNightsGameState.Planet3_EscortToSphere:
-                    main = "RESCUE STAFF";
-                    progress = "STAFF AT SPHERE: " + planet3StaffAtSphere.Value + "/2";
+                    main = PortalNightsLocalization.Text("objective.rescueStaff");
+                    progress = PortalNightsLocalization.Format("progress.staffAtSphere", planet3StaffAtSphere.Value);
                     return true;
                 case PortalNightsGameState.Planet3_SphereReady:
                 case PortalNightsGameState.Planet3_SphereActivation:
-                    main = "ACTIVATE THE SPHERE";
-                    progress = "STAFF AT SPHERE: " + planet3StaffAtSphere.Value + "/2";
+                    main = PortalNightsLocalization.Text("objective.activateSphere");
+                    progress = PortalNightsLocalization.Format("progress.staffAtSphere", planet3StaffAtSphere.Value);
                     severity = PortalNightsObjectiveSeverity.Warning;
                     return true;
                 case PortalNightsGameState.Planet3_DefensePreparation:
-                    main = "DEFEND THE SPHERE";
-                    progress = "BUILD TIME: " + Mathf.CeilToInt(planet3PreparationTimer.Value);
+                    main = PortalNightsLocalization.Text("objective.defendSphere");
+                    progress = PortalNightsLocalization.Format("progress.buildTime", Mathf.CeilToInt(planet3PreparationTimer.Value));
                     severity = PortalNightsObjectiveSeverity.Warning;
                     return true;
                 case PortalNightsGameState.Planet3_DefendSphere:
-                    main = "DEFEND THE SPHERE";
-                    progress = "RELAY CHARGE: " + Mathf.CeilToInt(planet3RelayCharge.Value) + "%";
+                    main = PortalNightsLocalization.Text("objective.defendSphere");
+                    progress = PortalNightsLocalization.Format("progress.relayCharge", Mathf.CeilToInt(planet3RelayCharge.Value));
                     severity = planet3RelayUnderAttackTimer > 0.01f ? PortalNightsObjectiveSeverity.Danger : PortalNightsObjectiveSeverity.Warning;
                     return true;
                 case PortalNightsGameState.Planet4_HordeActive:
                 case PortalNightsGameState.Planet4_RiftClosing:
-                    main = "CLOSE RIFTS";
-                    progress = "KILLS: " + planet4EnemiesDefeated.Value + "/" + planet4TargetKills + "   RIFTS: " + planet4RiftsClosed.Value + "/4";
+                    main = PortalNightsLocalization.Text("objective.closeRifts");
+                    progress = PortalNightsLocalization.Format("progress.killsRifts", planet4EnemiesDefeated.Value, planet4TargetKills, planet4RiftsClosed.Value);
                     severity = PortalNightsObjectiveSeverity.Warning;
                     return true;
                 case PortalNightsGameState.Planet4_ExitPortalReady:
-                    main = "ENTER THE PORTAL";
-                    progress = "PLANET 5 PORTAL OPEN";
+                    main = PortalNightsLocalization.Text("objective.enterPortal");
+                    progress = PortalNightsLocalization.Text("progress.planet5PortalOpen");
                     severity = PortalNightsObjectiveSeverity.Warning;
                     return true;
                 case PortalNightsGameState.Planet5_Arrival:
                 case PortalNightsGameState.Planet5_BossIntro:
                 case PortalNightsGameState.Planet5_DestroyHealingSphere:
-                    main = "DESTROY THE CORRUPTED SPHERE";
-                    progress = "SPHERE: " + FormatObjectiveHealth(planet5SphereHealth);
+                    main = PortalNightsLocalization.Text("objective.destroyCorruptedSphere");
+                    progress = PortalNightsLocalization.Format("progress.sphere", FormatObjectiveHealth(planet5SphereHealth));
                     severity = PortalNightsObjectiveSeverity.Danger;
                     return true;
                 case PortalNightsGameState.Planet5_KillBosses:
-                    main = "KILL BOTH BOSSES";
-                    progress = "BOSSES DEFEATED: " + planet5BossesDefeated.Value + "/2";
+                    main = PortalNightsLocalization.Text("objective.killBothBosses");
+                    progress = PortalNightsLocalization.Format("progress.bossesDefeated", planet5BossesDefeated.Value);
                     severity = PortalNightsObjectiveSeverity.Danger;
                     return true;
                 case PortalNightsGameState.Planet5_RestoreSphereReady:
                 case PortalNightsGameState.Planet5_RestoringSphere:
-                    main = "RESTORE THE SPHERE";
-                    progress = "STABILIZERS: " + planet5StabilizersCompleted.Value + "/" + Planet5StabilizersTotal;
+                    main = PortalNightsLocalization.Text("objective.restoreSphere");
+                    progress = PortalNightsLocalization.Format("progress.stabilizers", planet5StabilizersCompleted.Value, Planet5StabilizersTotal);
                     severity = PortalNightsObjectiveSeverity.Warning;
                     return true;
                 case PortalNightsGameState.Planet5_SphereRestored:
                 case PortalNightsGameState.Planet5_UniverseComplete:
-                    main = "UNIVERSE COMPLETE";
-                    progress = "ENTER NEXT UNIVERSE";
+                    main = PortalNightsLocalization.Text("objective.universeComplete");
+                    progress = PortalNightsLocalization.Text("progress.enterNextUniverse");
                     return true;
                 case PortalNightsGameState.Failed:
                 case PortalNightsGameState.Planet3_Failed:
                 case PortalNightsGameState.Planet4_Failed:
                 case PortalNightsGameState.Planet5_Failed:
-                    main = "OBJECTIVE FAILED";
-                    progress = "PRESS R TO RETRY";
+                    main = PortalNightsLocalization.Text("objective.failed");
+                    progress = PortalNightsLocalization.Text("progress.pressRetry");
                     severity = PortalNightsObjectiveSeverity.Danger;
                     return true;
                 default:
@@ -2196,13 +2219,15 @@ namespace PortalNights
             if (staff != null)
             {
                 string progress = planet3HoldStaff == staff && planet3HoldProgress > 0.01f ? $" {Mathf.CeilToInt(planet3HoldProgress * 100f / (staff.NeedsRevive ? 4f : 3f))}%" : string.Empty;
-                return staff.NeedsRevive ? "HOLD E TO REVIVE" + progress : "HOLD E TO RELEASE " + staff.StaffId + progress;
+                return staff.NeedsRevive
+                    ? PortalNightsLocalization.Format("prompt.holdRevive", progress)
+                    : PortalNightsLocalization.Format("prompt.holdReleaseStaff", staff.StaffId, progress);
             }
 
             if ((GameState == PortalNightsGameState.Planet3_SphereReady || GameState == PortalNightsGameState.Planet3_SphereActivation) && IsNearRelaySphere(playerPosition))
             {
                 string progress = planet3HoldKind == PortalNightsPlanet3HoldKind.ActivateRelay && planet3HoldProgress > 0.01f ? $" {Mathf.CeilToInt(planet3HoldProgress * 25f)}%" : string.Empty;
-                return "HOLD E TO ACTIVATE RELAY SPHERE" + progress;
+                return PortalNightsLocalization.Format("prompt.holdActivateRelay", progress);
             }
 
             return string.Empty;
@@ -3161,14 +3186,14 @@ namespace PortalNights
 
             if (GameState == PortalNightsGameState.Planet4_ExitPortalReady && IsNearPlanet4ExitPortal(playerPosition))
             {
-                return "E ENTER THE FINAL WORLD";
+                return PortalNightsLocalization.Text("prompt.enterFinalWorld");
             }
 
             PortalNightsPlanet4HiveRift rift = GetClosestPlanet4ClosableRift(playerPosition);
             if (rift != null)
             {
                 string progress = planet4HoldRift == rift && Planet4RiftHoldProgress > 0.01f ? $" {Mathf.CeilToInt(Planet4RiftHoldProgress * 100f)}%" : string.Empty;
-                return "HOLD E TO CLOSE " + rift.RiftId.ToUpperInvariant() + progress;
+                return PortalNightsLocalization.Format("prompt.holdCloseRift", rift.RiftId.ToUpperInvariant(), progress);
             }
 
             return string.Empty;
@@ -3515,7 +3540,7 @@ namespace PortalNights
             if (!planet5FirstSphereHintShown && planet5SphereIgnoreTimer >= 18f)
             {
                 planet5FirstSphereHintShown = true;
-                PlayReminderDialogueServer("p05_destroy_sphere_hint_001", "DESTROY THE CORRUPTED SPHERE", string.Empty, PortalNightsObjectiveSeverity.Danger);
+                PlayReminderDialogueServer("p05_destroy_sphere_hint_001", PortalNightsLocalization.Text("objective.destroyCorruptedSphere"), string.Empty, PortalNightsObjectiveSeverity.Danger);
             }
 
             if (planet5BossPressureReminderStarted)
@@ -3526,7 +3551,7 @@ namespace PortalNights
             if (!planet5SecondSphereHintShown && planet5BossPressureReminderStarted && planet5BossPressureReminderTimer >= 25f)
             {
                 planet5SecondSphereHintShown = true;
-                PlayReminderDialogueServer("p05_bosses_healed_hint_001", "DESTROY THE CORRUPTED SPHERE", "BOSSES ARE BEING HEALED", PortalNightsObjectiveSeverity.Danger);
+                PlayReminderDialogueServer("p05_bosses_healed_hint_001", PortalNightsLocalization.Text("objective.destroyCorruptedSphere"), PortalNightsLocalization.Text("progress.bossesHealing"), PortalNightsObjectiveSeverity.Danger);
             }
         }
 
@@ -3649,7 +3674,7 @@ namespace PortalNights
                 planet5StabilizerHoldProgress = 0f;
                 SetGameState(PortalNightsGameState.Planet5_RestoringSphere);
                 ResetReminderTimer(ref planet5RestoreSphereReminderTimer, ref planet5RestoreSphereReminderStarted, "P5 restore sphere started");
-                SendToast(clientId, "HOLD E TO STABILIZE");
+                SendToast(clientId, PortalNightsLocalization.Format("prompt.holdStabilize", string.Empty, string.Empty));
             }
 
             planet5StabilizerHoldProgress = Mathf.Min(planet5StabilizerHoldTime, planet5StabilizerHoldProgress + Mathf.Max(0f, deltaTime));
@@ -3802,7 +3827,7 @@ namespace PortalNights
 
             if (GameState == PortalNightsGameState.Planet5_UniverseComplete && IsNearPlanet5UniversePortal(playerPosition))
             {
-                return "E ENTER UNIVERSE " + ((runState == null ? 1 : runState.universeIndex) + 1);
+                return PortalNightsLocalization.Format("hud.enterNextUniverse", (runState == null ? 1 : runState.universeIndex) + 1);
             }
 
             if (GameState != PortalNightsGameState.Planet5_RestoreSphereReady && GameState != PortalNightsGameState.Planet5_RestoringSphere)
@@ -3819,7 +3844,7 @@ namespace PortalNights
             string progress = planet5HoldStabilizer == stabilizer && Planet5StabilizerHoldProgress > 0.01f
                 ? " " + Mathf.CeilToInt(Planet5StabilizerHoldProgress * 100f) + "%"
                 : string.Empty;
-            return "HOLD E TO STABILIZE" + progress;
+            return PortalNightsLocalization.Format("prompt.holdStabilize", string.Empty, progress);
         }
 
         private bool IsNearPlanet5UniversePortal(Vector3 position)
@@ -3974,7 +3999,7 @@ namespace PortalNights
             CreateRuntimePrimitive("UniversePortal_Core", PrimitiveType.Sphere, portal.transform, new Vector3(0f, 3.2f, 0f), new Vector3(5.6f, 5.6f, 0.5f), cyan, false);
             CreateSegmentedRing("UniversePortal_Ring", portal.transform, 4.1f, 24, new Vector3(1f, 0.18f, 0.35f), cyan, 3.2f);
             CreateRuntimePrimitive("UniversePortal_Beam", PrimitiveType.Cylinder, portal.transform, new Vector3(0f, 14f, 0f), new Vector3(0.38f, 14f, 0.38f), white, false);
-            CreateWorldLabel("UniversePortal_Label", portal.transform, new Vector3(0f, 0.7f, -6f), "ENTER UNIVERSE " + ((runState == null ? 1 : runState.universeIndex) + 1), new Color(0.39f, 0.97f, 1f, 1f));
+            CreateWorldLabel("UniversePortal_Label", portal.transform, new Vector3(0f, 0.7f, -6f), PortalNightsLocalization.Format("hud.enterNextUniverse", (runState == null ? 1 : runState.universeIndex) + 1), new Color(0.39f, 0.97f, 1f, 1f));
 
             Light light = portal.AddComponent<Light>();
             light.type = LightType.Point;
@@ -3987,11 +4012,11 @@ namespace PortalNights
         private static string BuildLeaderboardText(IReadOnlyList<PortalNightsLeaderboardEntry> topEntries, int nextUniverse)
         {
             System.Text.StringBuilder builder = new System.Text.StringBuilder();
-            builder.AppendLine("LOCAL LEADERBOARD");
-            builder.AppendLine("RANK  NAME        SCORE    U  TIME   ENEMIES  BOSSES");
+            builder.AppendLine(PortalNightsLocalization.Text("hud.localLeaderboard"));
+            builder.AppendLine(PortalNightsLocalization.Text("hud.leaderboardHeader"));
             if (topEntries == null || topEntries.Count == 0)
             {
-                builder.AppendLine("NO ENTRIES YET");
+                builder.AppendLine(PortalNightsLocalization.Text("hud.noLeaderboard"));
             }
             else
             {
@@ -4006,7 +4031,7 @@ namespace PortalNights
 
                     builder.Append(i + 1);
                     builder.Append("     ");
-                    string playerName = string.IsNullOrWhiteSpace(entry.playerName) ? "Commander" : entry.playerName;
+                    string playerName = string.IsNullOrWhiteSpace(entry.playerName) ? PortalNightsLocalization.Text("hud.defaultPlayerName") : entry.playerName;
                     builder.Append(playerName.Length > 10 ? playerName.Substring(0, 10) : playerName.PadRight(10));
                     builder.Append("  ");
                     builder.Append(entry.score);
@@ -4023,9 +4048,9 @@ namespace PortalNights
             }
 
             builder.AppendLine();
-            builder.Append("E ENTER UNIVERSE ");
-            builder.Append(Mathf.Max(2, nextUniverse));
-            builder.Append("   L HIDE/SHOW");
+            builder.Append(PortalNightsLocalization.Format("hud.enterNextUniverse", Mathf.Max(2, nextUniverse)));
+            builder.Append("   ");
+            builder.Append(PortalNightsLocalization.Text("hud.leaderboardToggle"));
             return builder.ToString();
         }
 
@@ -4107,6 +4132,7 @@ namespace PortalNights
             SetPlanetRootEnvironment(planet3Root, clampedPlanet == 3);
             SetPlanetRootEnvironment(planet4Root, clampedPlanet == 4);
             SetPlanetRootEnvironment(planet5Root, clampedPlanet == 5);
+            HideAllObjectiveMarkers();
         }
 
         private static int GetPlanetIndexForState(PortalNightsGameState state)
@@ -5068,12 +5094,12 @@ namespace PortalNights
         {
             if (portalPrompt == null && portalSpawn != null)
             {
-                portalPrompt = CreateWorldLabel("PortalPrompt", portalSpawn, new Vector3(0f, 2.8f, -1.2f), "E ENTER PORTAL", new Color(0.9f, 0.72f, 1f, 1f));
+                portalPrompt = CreateWorldLabel("PortalPrompt", portalSpawn, new Vector3(0f, 2.8f, -1.2f), PortalNightsLocalization.Text("hud.enterPortal"), new Color(0.9f, 0.72f, 1f, 1f));
             }
 
             if (portalPrompt != null)
             {
-                portalPrompt.gameObject.SetActive(PortalReady);
+                SetObjectActiveIfChanged(portalPrompt.gameObject, PortalReady);
             }
 
             if (planet2Sphere != null)
@@ -5089,26 +5115,40 @@ namespace PortalNights
 
         private void UpdateObjectiveWorldMarkers()
         {
-            SetObjectiveMarker(planet2Sphere, GameState == PortalNightsGameState.Planet2_SphereReady, "ACTIVATE", new Color(0.39f, 0.97f, 1f, 1f), 3.3f);
-            SetObjectiveMarker(planet3RelaySphere, GameState == PortalNightsGameState.Planet3_SphereReady || GameState == PortalNightsGameState.Planet3_SphereActivation || GameState == PortalNightsGameState.Planet3_DefendSphere, "RELAY", new Color(0.39f, 0.97f, 1f, 1f), 4.2f);
-            SetObjectiveMarker(planet5SphereVisual == null ? null : planet5SphereVisual.transform, GameState == PortalNightsGameState.Planet5_DestroyHealingSphere, "CORRUPTED SPHERE", new Color(1f, 0.24f, 0.2f, 1f), 5.4f);
+            PortalNightsGameState state = GameState;
+            SetObjectiveMarker(planet2Sphere, state == PortalNightsGameState.Planet2_SphereReady, PortalNightsLocalization.Text("marker.activate"), new Color(0.39f, 0.97f, 1f, 1f), 3.3f);
 
-            foreach (PortalNightsStaffRescue staff in planet3Staff)
+            if (IsPlanet3State(state))
             {
-                bool active = staff != null && (staff.NeedsRelease || staff.NeedsRevive || staff.State == PortalNightsStaffState.Following);
-                SetObjectiveMarker(staff == null ? null : staff.transform, active, "STAFF", new Color(0.52f, 1f, 0.68f, 1f), 2.6f);
+                SetObjectiveMarker(planet3RelaySphere, state == PortalNightsGameState.Planet3_SphereReady || state == PortalNightsGameState.Planet3_SphereActivation || state == PortalNightsGameState.Planet3_DefendSphere, PortalNightsLocalization.Text("marker.relay"), new Color(0.39f, 0.97f, 1f, 1f), 4.2f);
+                foreach (PortalNightsStaffRescue staff in planet3Staff)
+                {
+                    bool active = staff != null && (staff.NeedsRelease || staff.NeedsRevive || staff.State == PortalNightsStaffState.Following);
+                    SetObjectiveMarker(staff == null ? null : staff.transform, active, PortalNightsLocalization.Text("marker.staff"), new Color(0.52f, 1f, 0.68f, 1f), 2.6f);
+                }
             }
 
-            foreach (PortalNightsPlanet4HiveRift rift in planet4Rifts)
+            if (IsPlanet4State(state))
             {
-                bool active = rift != null && rift.IsClosable;
-                SetObjectiveMarker(rift == null ? null : rift.transform, active, "CLOSE RIFT", new Color(1f, 0.76f, 0.22f, 1f), 5.8f);
+                foreach (PortalNightsPlanet4HiveRift rift in planet4Rifts)
+                {
+                    bool active = rift != null && rift.IsClosable;
+                    SetObjectiveMarker(rift == null ? null : rift.transform, active, PortalNightsLocalization.Text("marker.closeRift"), new Color(1f, 0.76f, 0.22f, 1f), 5.8f);
+                }
             }
 
-            foreach (PortalNightsPlanet5Stabilizer stabilizer in planet5Stabilizers)
+            if (IsPlanet5State(state))
             {
-                bool active = stabilizer != null && !stabilizer.IsCompleted && (GameState == PortalNightsGameState.Planet5_RestoreSphereReady || GameState == PortalNightsGameState.Planet5_RestoringSphere);
-                SetObjectiveMarker(stabilizer == null ? null : stabilizer.transform, active, "STABILIZER", new Color(0.39f, 0.97f, 1f, 1f), 2.7f);
+                SetObjectiveMarker(planet5SphereVisual == null ? null : planet5SphereVisual.transform, state == PortalNightsGameState.Planet5_DestroyHealingSphere, PortalNightsLocalization.Text("marker.corruptedSphere"), new Color(1f, 0.24f, 0.2f, 1f), 5.4f);
+                bool stabilizersVisible = state == PortalNightsGameState.Planet5_RestoreSphereReady || state == PortalNightsGameState.Planet5_RestoringSphere;
+                if (stabilizersVisible)
+                {
+                    foreach (PortalNightsPlanet5Stabilizer stabilizer in planet5Stabilizers)
+                    {
+                        bool active = stabilizer != null && !stabilizer.IsCompleted;
+                        SetObjectiveMarker(stabilizer == null ? null : stabilizer.transform, active, PortalNightsLocalization.Text("marker.stabilizer"), new Color(0.39f, 0.97f, 1f, 1f), 2.7f);
+                    }
+                }
             }
         }
 
@@ -5125,7 +5165,7 @@ namespace PortalNights
                 objectiveMarkers[target] = marker;
             }
 
-            marker.gameObject.SetActive(active);
+            SetObjectActiveIfChanged(marker.gameObject, active);
             if (!active)
             {
                 return;
@@ -5135,8 +5175,34 @@ namespace PortalNights
             TextMesh textMesh = marker.GetComponent<TextMesh>();
             if (textMesh != null)
             {
-                textMesh.text = text;
-                textMesh.color = color;
+                if (textMesh.text != text)
+                {
+                    textMesh.text = text;
+                }
+
+                if (textMesh.color != color)
+                {
+                    textMesh.color = color;
+                }
+            }
+        }
+
+        private void HideAllObjectiveMarkers()
+        {
+            foreach (Transform marker in objectiveMarkers.Values)
+            {
+                if (marker != null)
+                {
+                    SetObjectActiveIfChanged(marker.gameObject, false);
+                }
+            }
+        }
+
+        private static void SetObjectActiveIfChanged(GameObject target, bool active)
+        {
+            if (target != null && target.activeSelf != active)
+            {
+                target.SetActive(active);
             }
         }
 
@@ -5282,7 +5348,7 @@ namespace PortalNights
         [ClientRpc]
         private void ToastClientRpc(string message, ClientRpcParams rpcParams = default)
         {
-            PortalNightsHud.Instance?.ShowToast(message);
+            PortalNightsHud.Instance?.ShowToast(PortalNightsLocalization.LocalizeRuntimeText(message));
         }
 
         [ClientRpc]
@@ -5302,7 +5368,7 @@ namespace PortalNights
         private void WaveClearedClientRpc(int completedWave, int bonus)
         {
             string message = bonus > 0
-                ? $"{PortalNightsLocalization.Text("toast.waveClear")}  +{bonus} COINS"
+                ? $"{PortalNightsLocalization.Text("toast.waveClear")}  +{bonus} {PortalNightsLocalization.Text("hud.coins")}"
                 : PortalNightsLocalization.Text("toast.waveClear");
             PortalNightsMissionComms.EnsureInstance().ShowMissionToast(message);
         }
@@ -5311,7 +5377,7 @@ namespace PortalNights
         private void PortalChargingClientRpc(Vector3 position)
         {
             PortalNightsVfx.SpawnBurst(position, new Color(0.8f, 0.15f, 1f, 1f), 2.1f, 34);
-            PortalNightsHud.Instance?.ShowToast("PORTAL CHARGING - BOTH LANES");
+            PortalNightsHud.Instance?.ShowToast(PortalNightsLocalization.Text("toast.portalCharging"));
         }
 
         [ClientRpc]
@@ -5326,29 +5392,31 @@ namespace PortalNights
             if (System.Enum.TryParse(stateName, out PortalNightsGameState parsedState))
             {
                 SetActivePlanetEnvironment(GetPlanetIndexForState(parsedState));
+                PortalNightsHud.Instance?.ShowToast(PortalNightsLocalization.StateText(parsedState));
+                return;
             }
 
-            PortalNightsHud.Instance?.ShowToast(stateName.Replace('_', ' '));
+            PortalNightsHud.Instance?.ShowToast(PortalNightsLocalization.LocalizeRuntimeText(stateName.Replace('_', ' ')));
         }
 
         [ClientRpc]
         private void RewardChoiceClientRpc(int completedWave)
         {
-            PortalNightsHud.Instance?.ShowToast($"WAVE {completedWave} REWARD - PRESS 1 / 2 / 3");
+            PortalNightsHud.Instance?.ShowToast(PortalNightsLocalization.Format("toast.rewardChoice", completedWave));
         }
 
         [ClientRpc]
         private void PortalReadyClientRpc(Vector3 position)
         {
             PortalNightsVfx.SpawnBurst(position, new Color(0.86f, 0.24f, 1f, 1f), 3.2f, 54);
-            PortalNightsHud.Instance?.ShowToast("PORTAL READY");
+            PortalNightsHud.Instance?.ShowToast(PortalNightsLocalization.Text("toast.portalReady"));
         }
 
         [ClientRpc]
         private void SphereReadyClientRpc(Vector3 position)
         {
             PortalNightsVfx.SpawnBurst(position, new Color(0.18f, 0.9f, 1f, 1f), 2.1f, 34);
-            PortalNightsHud.Instance?.ShowToast("E ACTIVATE SPHERE");
+            PortalNightsHud.Instance?.ShowToast(PortalNightsLocalization.Text("toast.activateSphere"));
         }
 
         [ClientRpc]
@@ -5442,7 +5510,7 @@ namespace PortalNights
         private void Planet5HealingPulseClientRpc(Vector3 position)
         {
             PortalNightsVfx.SpawnBurst(position, new Color(1f, 0.1f, 0.35f, 1f), 2.4f, 34);
-            PortalNightsVfx.SpawnFloatingText(position + Vector3.up * 1.4f, "BOSS HEAL", new Color(1f, 0.42f, 0.3f, 1f));
+            PortalNightsVfx.SpawnFloatingText(position + Vector3.up * 1.4f, PortalNightsLocalization.Text("toast.bossHeal"), new Color(1f, 0.42f, 0.3f, 1f));
         }
 
         [ClientRpc]
@@ -5462,7 +5530,7 @@ namespace PortalNights
         {
             Color color = new Color(0.39f, 0.97f, 1f, 1f);
             PortalNightsVfx.SpawnBurst(position, color, 1.9f, 28);
-            PortalNightsVfx.SpawnFloatingText(position + Vector3.up * 1.8f, stabilizerId.ToUpperInvariant() + " ONLINE " + completed + "/" + total, color);
+            PortalNightsVfx.SpawnFloatingText(position + Vector3.up * 1.8f, PortalNightsLocalization.Format("toast.online", stabilizerId.ToUpperInvariant(), completed, total), color);
         }
 
         [ClientRpc]
@@ -5470,7 +5538,7 @@ namespace PortalNights
         {
             Color color = new Color(0.39f, 0.97f, 1f, 1f);
             PortalNightsVfx.SpawnBurst(position, color, 4.2f, 70);
-            PortalNightsVfx.SpawnFloatingText(position + Vector3.up * 2f, "SPHERE RESTORED", color);
+            PortalNightsVfx.SpawnFloatingText(position + Vector3.up * 2f, PortalNightsLocalization.Text("toast.sphereRestored"), color);
         }
 
         [ClientRpc]
@@ -5554,16 +5622,16 @@ namespace PortalNights
         private void UniverseCompleteSummaryClientRpc(string leaderboardText)
         {
             universeCompleteLeaderboardText = leaderboardText ?? string.Empty;
-            PortalNightsMissionComms.EnsureInstance().ShowMissionToast("UNIVERSE COMPLETE");
+            PortalNightsMissionComms.EnsureInstance().ShowMissionToast(PortalNightsLocalization.Text("toast.universeComplete"));
         }
 
         [ClientRpc]
         private void UniverseEnteredClientRpc(int universeIndex, float enemyHpMultiplier, float enemyDamageMultiplier, int scoreMultiplier)
         {
             universeCompleteLeaderboardText = string.Empty;
-            PortalNightsHud.Instance?.ShowToast("UNIVERSE " + universeIndex + " - ENEMIES EMPOWERED - PLANET 1");
+            PortalNightsHud.Instance?.ShowToast(PortalNightsLocalization.Format("toast.universeEntered", universeIndex));
             PortalNightsHud.Instance?.ShowRunStatus(universeIndex, Instance == null ? 0 : Instance.CurrentScore);
-            PortalNightsVfx.SpawnFloatingText(new Vector3(0f, 4.5f, -8f), "HP x" + enemyHpMultiplier.ToString("0.00") + "  DMG x" + enemyDamageMultiplier.ToString("0.00") + "  SCORE x" + scoreMultiplier, new Color(0.39f, 0.97f, 1f, 1f));
+            PortalNightsVfx.SpawnFloatingText(new Vector3(0f, 4.5f, -8f), PortalNightsLocalization.Format("toast.multiplier", enemyHpMultiplier.ToString("0.00"), enemyDamageMultiplier.ToString("0.00"), scoreMultiplier), new Color(0.39f, 0.97f, 1f, 1f));
         }
 
         [ClientRpc]
@@ -5571,19 +5639,19 @@ namespace PortalNights
         {
             PortalNightsGameState state = Instance == null ? GameState : Instance.GameState;
             string message = IsPlanet5State(state)
-                ? "PLANET 5: CRIMSON SINGULARITY"
+                ? PortalNightsLocalization.Text("hud.planet5")
                 : IsPlanet4State(state)
-                ? "PLANET 4: SWARM EXPANSE"
+                ? PortalNightsLocalization.Text("hud.planet4")
                 : IsPlanet3State(state)
-                ? "PLANET 3: ASH RELAY STATION"
-                : "PLANET 2: CRYSTAL MOON";
+                ? PortalNightsLocalization.Text("hud.planet3")
+                : PortalNightsLocalization.Text("hud.planet2");
             PortalNightsHud.Instance?.ShowToast(message);
         }
 
         [ClientRpc]
         private void BroadcastToastClientRpc(string message)
         {
-            PortalNightsHud.Instance?.ShowToast(message);
+            PortalNightsHud.Instance?.ShowToast(PortalNightsLocalization.LocalizeRuntimeText(message));
         }
 
         [ClientRpc]

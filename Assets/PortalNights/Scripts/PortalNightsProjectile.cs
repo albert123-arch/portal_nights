@@ -8,6 +8,7 @@ namespace PortalNights
         private const int MaxPoolSize = 96;
         private static readonly Stack<PortalNightsProjectile> pool = new Stack<PortalNightsProjectile>();
         private static int spawnsSinceLastSample;
+        private static long totalSpawns;
 
         [SerializeField] private float speed = 36f;
         [SerializeField] private float lifeTime = 0.65f;
@@ -26,11 +27,14 @@ namespace PortalNights
             return count;
         }
 
+        public static long TotalSpawns => totalSpawns;
+
         public static void Spawn(Vector3 origin, Vector3 destination, Color color, float width)
         {
             PortalNightsProjectile portalProjectile = GetOrCreate();
             portalProjectile.Configure(origin, destination, color, width);
             spawnsSinceLastSample++;
+            totalSpawns++;
         }
 
         private static PortalNightsProjectile GetOrCreate()

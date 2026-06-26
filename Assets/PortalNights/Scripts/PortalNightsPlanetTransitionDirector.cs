@@ -105,23 +105,23 @@ namespace PortalNights
             {
                 case 2:
                     comms.PlayDialogueById("p02_arrival_001");
-                    comms.SetObjective("CLEAR THE AREA", string.Empty);
+                    comms.SetObjective(PortalNightsLocalization.Text("objective.clearArea"), string.Empty);
                     break;
                 case 3:
                     comms.PlayDialogueById("p03_arrival_001");
-                    comms.SetObjective("RESCUE STAFF", "STAFF RESCUED: 0/2");
+                    comms.SetObjective(PortalNightsLocalization.Text("objective.rescueStaff"), PortalNightsLocalization.Format("progress.staffAtSphere", 0));
                     break;
                 case 4:
                     comms.PlayDialogueById("p04_arrival_001");
-                    comms.SetObjective("CLOSE RIFTS", "KILL THE SWARM: 0/140");
+                    comms.SetObjective(PortalNightsLocalization.Text("objective.closeRifts"), PortalNightsLocalization.Format("progress.killsRifts", 0, 140, 0));
                     break;
                 case 5:
                     comms.PlayDialogueById("p05_arrival_001");
-                    comms.SetObjective("DESTROY THE CORRUPTED SPHERE", string.Empty, PortalNightsObjectiveSeverity.Danger);
+                    comms.SetObjective(PortalNightsLocalization.Text("objective.destroyCorruptedSphere"), string.Empty, PortalNightsObjectiveSeverity.Danger);
                     break;
                 default:
                     comms.PlayDialogueById("universe_next_001");
-                    comms.SetObjective("PLANET 1 - ENEMIES EMPOWERED", string.Empty, PortalNightsObjectiveSeverity.Warning);
+                    comms.SetObjective(PortalNightsLocalization.Text("transition.planet1Empowered"), string.Empty, PortalNightsObjectiveSeverity.Warning);
                     break;
             }
         }
@@ -171,8 +171,8 @@ namespace PortalNights
                 yield break;
             }
 
-            titleText.text = planetIndex <= 1 ? "UNIVERSE SHIFT" : "PLANET " + planetIndex;
-            subtitleText.text = planetName;
+            SetTextIfChanged(titleText, planetIndex <= 1 ? PortalNightsLocalization.Text("transition.universeShift") : PortalNightsLocalization.Format("transition.planetTitle", planetIndex));
+            SetTextIfChanged(subtitleText, planetName);
             float elapsed = 0f;
             while (elapsed < 0.22f)
             {
@@ -233,7 +233,7 @@ namespace PortalNights
             transitRect.anchoredPosition = new Vector2(0f, -58f);
             transitRect.sizeDelta = new Vector2(560f, 80f);
             transitText.alignment = TextAnchor.MiddleCenter;
-            transitText.text = "SIGNAL SHIFTING...\nPORTAL TRANSIT...";
+            SetTextIfChanged(transitText, PortalNightsLocalization.Text("transition.transit"));
 
             GameObject titleObject = new GameObject("PlanetTitleCard", typeof(RectTransform), typeof(CanvasGroup));
             titleObject.transform.SetParent(canvas.transform, false);
@@ -285,7 +285,7 @@ namespace PortalNights
         {
             if (transitText != null)
             {
-                transitText.text = visible ? "SIGNAL SHIFTING...\nPORTAL TRANSIT..." : string.Empty;
+                SetTextIfChanged(transitText, visible ? PortalNightsLocalization.Text("transition.transit") : string.Empty);
             }
         }
 
@@ -322,7 +322,7 @@ namespace PortalNights
                 case 5:
                     return "CRIMSON SINGULARITY";
                 default:
-                    return "PLANET 1 - ENEMIES EMPOWERED";
+                    return PortalNightsLocalization.Text("transition.planet1Empowered");
             }
         }
 
@@ -330,6 +330,22 @@ namespace PortalNights
         {
             t = Mathf.Clamp01(t);
             return t * t * (3f - 2f * t);
+        }
+
+        private static void SetTextIfChanged(Text target, string value)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            value ??= string.Empty;
+            if (target.text == value)
+            {
+                return;
+            }
+
+            target.text = value;
         }
 
         private static Text CreateText(string name, Transform parent, Font font, int fontSize, FontStyle style, Color color)
