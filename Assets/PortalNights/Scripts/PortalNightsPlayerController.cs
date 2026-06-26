@@ -88,6 +88,8 @@ namespace PortalNights
 
         public override void OnNetworkSpawn()
         {
+            PortalNightsGameController.Instance?.RegisterPlayer(this);
+
             if (IsServer)
             {
                 health.ServerInitialize(health.BaseMaxHealth, true);
@@ -109,6 +111,11 @@ namespace PortalNights
 
             previousAnimationPosition = transform.position;
             animationPositionInitialized = true;
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            PortalNightsGameController.Instance?.UnregisterPlayer(this);
         }
 
         private void Update()

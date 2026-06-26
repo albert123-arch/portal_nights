@@ -85,7 +85,12 @@ namespace PortalNights
         [Header("Run State")]
         [SerializeField] private PortalNightsRunState runState = new PortalNightsRunState();
 
+        [Header("Diagnostics")]
+        [SerializeField] private bool performanceDebug;
+        [SerializeField] private bool hardDisableInactivePlanetRoots = true;
+
         private readonly List<PortalNightsEnemy> enemies = new List<PortalNightsEnemy>();
+        private readonly List<PortalNightsPlayerController> registeredPlayers = new List<PortalNightsPlayerController>();
         private readonly List<PortalNightsBuildPoint> buildPoints = new List<PortalNightsBuildPoint>();
         private readonly List<PortalNightsAlly> allies = new List<PortalNightsAlly>();
         private readonly List<PortalNightsStaffRescue> planet3Staff = new List<PortalNightsStaffRescue>();
@@ -96,6 +101,7 @@ namespace PortalNights
         private readonly Dictionary<PortalNightsEnemy, int> planet4EnemyRiftIndex = new Dictionary<PortalNightsEnemy, int>();
         private readonly Dictionary<PortalNightsEnemy, PortalNightsPlanet4EnemyVariant> planet4EnemyVariants = new Dictionary<PortalNightsEnemy, PortalNightsPlanet4EnemyVariant>();
         private readonly Dictionary<Transform, Transform> objectiveMarkers = new Dictionary<Transform, Transform>();
+        private readonly Dictionary<Transform, PlanetEnvironmentCache> planetEnvironmentCaches = new Dictionary<Transform, PlanetEnvironmentCache>();
         private readonly PortalNightsLeaderboardService leaderboardService = new PortalNightsLocalLeaderboardService();
 
         private readonly NetworkVariable<int> waveNumber = new NetworkVariable<int>(
@@ -235,6 +241,10 @@ namespace PortalNights
         private bool planet5SecondSphereHintShown;
         private bool planet5SphereDestroyed;
         private bool planet5UniverseCompleteSubmitted;
+        private bool pendingPlanet4RiftCounterRefresh;
+        private int activePlanetEnvironmentIndex = -1;
+        private float performanceDebugTimer;
+        private float nextPlayerCacheRefreshTime;
         private string universeCompleteLeaderboardText = string.Empty;
 
         public static PortalNightsGameController Instance { get; private set; }
@@ -302,6 +312,7 @@ namespace PortalNights
             EnsurePlanet3Area();
             EnsurePlanet4Area();
             EnsurePlanet5Area();
+            SetActivePlanetEnvironment(GetPlanetIndexForState(GameState));
             MakeDefenseObjectsPlayerFriendly();
             hud?.Bind(this);
 
@@ -348,6 +359,7 @@ namespace PortalNights
             EnsurePlanet3Area();
             EnsurePlanet4Area();
             EnsurePlanet5Area();
+            SetActivePlanetEnvironment(GetPlanetIndexForState(GameState));
             if (IsServer)
             {
                 if (initializeServerStateRoutine != null)
@@ -356,6 +368,11 @@ namespace PortalNights
                 }
 
                 initializeServerStateRoutine = StartCoroutine(InitializeServerStateAfterSpawn());
+                if (pendingPlanet4RiftCounterRefresh)
+                {
+                    pendingPlanet4RiftCounterRefresh = false;
+                    RefreshPlanet4RiftCountersServer();
+                }
             }
         }
 
@@ -370,6 +387,7 @@ namespace PortalNights
         private void Update()
         {
             UpdateRuntimeVisuals();
+            UpdatePerformanceDebug();
 
             if (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame && GameOver && IsServer)
             {
@@ -765,6 +783,19 @@ namespace PortalNights
             }
         }
 
+        public void RegisterPlayer(PortalNightsPlayerController player)
+        {
+            if (player != null && !registeredPlayers.Contains(player))
+            {
+                registeredPlayers.Add(player);
+            }
+        }
+
+        public void UnregisterPlayer(PortalNightsPlayerController player)
+        {
+            registeredPlayers.Remove(player);
+        }
+
         public void RegisterBuildPoint(PortalNightsBuildPoint buildPoint)
         {
             if (buildPoint != null && !buildPoints.Contains(buildPoint))
@@ -1078,13 +1109,19 @@ namespace PortalNights
 
         public PortalNightsPlayerController GetClosestLivingPlayer(Vector3 position, float range)
         {
+            RefreshRegisteredPlayersIfNeeded();
             PortalNightsPlayerController best = null;
             float bestSqr = range * range;
-            PortalNightsPlayerController[] players = FindObjectsByType<PortalNightsPlayerController>(FindObjectsSortMode.None);
-            foreach (PortalNightsPlayerController player in players)
+            for (int i = registeredPlayers.Count - 1; i >= 0; i--)
             {
+                PortalNightsPlayerController player = registeredPlayers[i];
                 if (player == null || player.Health == null || player.Health.IsDead)
                 {
+                    if (player == null)
+                    {
+                        registeredPlayers.RemoveAt(i);
+                    }
+
                     continue;
                 }
 
@@ -1097,6 +1134,21 @@ namespace PortalNights
             }
 
             return best;
+        }
+
+        private void RefreshRegisteredPlayersIfNeeded()
+        {
+            if (registeredPlayers.Count > 0 || Time.time < nextPlayerCacheRefreshTime)
+            {
+                return;
+            }
+
+            nextPlayerCacheRefreshTime = Time.time + 1f;
+            PortalNightsPlayerController[] players = FindObjectsByType<PortalNightsPlayerController>(FindObjectsSortMode.None);
+            for (int i = 0; i < players.Length; i++)
+            {
+                RegisterPlayer(players[i]);
+            }
         }
 
         public PortalNightsHealth GetEnemyTargetHealth(Vector3 position, float playerRange)
@@ -1855,6 +1907,7 @@ namespace PortalNights
             }
 
             gameState.Value = (int)newState;
+            SetActivePlanetEnvironment(GetPlanetIndexForState(newState));
             Debug.Log("[PortalNights] State -> " + newState, this);
             StateChangedClientRpc(newState.ToString());
         }
@@ -2180,6 +2233,7 @@ namespace PortalNights
             }
 
             EnsurePlanet2Area();
+            SetActivePlanetEnvironment(2);
             if (planet2SphereHealth != null)
             {
                 planet2SphereHealth.gameObject.SetActive(true);
@@ -2252,6 +2306,7 @@ namespace PortalNights
             SetGameState(PortalNightsGameState.Planet2_Cleared);
             BroadcastToastClientRpc("PLANET CLEARED - ASH RELAY STATION ONLINE");
             BeginPlanetTransitionClientRpc(2, 3);
+            SetActivePlanetEnvironment(3);
             StartPlanet3ArrivalServer();
             CompletePlanetTransitionClientRpc(3);
         }
@@ -2529,7 +2584,7 @@ namespace PortalNights
             Renderer renderer = core.GetComponent<Renderer>();
             if (renderer != null)
             {
-                renderer.material = PortalNightsVfx.CreateRuntimeGlowMaterial(color, color * 2.8f);
+                renderer.sharedMaterial = PortalNightsVfx.CreateRuntimeGlowMaterial(color, color * 2.8f);
             }
 
             foreach (Collider collider in pickup.GetComponentsInChildren<Collider>())
@@ -2605,6 +2660,7 @@ namespace PortalNights
             }
 
             EnsurePlanet4Area();
+            SetActivePlanetEnvironment(4);
             if (planet4Root == null || planet4Rifts.Count == 0)
             {
                 Debug.LogWarning("[PortalNights] Planet 4 map missing. Build Planet4_SwarmExpanse before starting the horde.", this);
@@ -3018,6 +3074,12 @@ namespace PortalNights
                 return;
             }
 
+            if (!IsSpawned)
+            {
+                pendingPlanet4RiftCounterRefresh = true;
+                return;
+            }
+
             int active = 0;
             int closed = 0;
             foreach (PortalNightsPlanet4HiveRift rift in planet4Rifts)
@@ -3129,6 +3191,7 @@ namespace PortalNights
             }
 
             BeginPlanetTransitionClientRpc(4, 5);
+            SetActivePlanetEnvironment(5);
             SetGameState(PortalNightsGameState.Planet4_Cleared);
             StartPlanet5ArrivalServer();
             CompletePlanetTransitionClientRpc(5);
@@ -3211,6 +3274,7 @@ namespace PortalNights
             }
 
             EnsurePlanet5Area();
+            SetActivePlanetEnvironment(5);
             if (planet5Root == null || planet5SphereHealth == null)
             {
                 Debug.LogWarning("[PortalNights] Planet 5 map missing. Build Planet5_CrimsonSingularity before starting final boss gameplay.", this);
@@ -3783,6 +3847,7 @@ namespace PortalNights
             }
 
             BeginPlanetTransitionClientRpc(5, 1);
+            SetActivePlanetEnvironment(1);
             runState.EnterNextUniverse();
             runState.currentPlanetIndex = 1;
             int universe = runState.universeIndex;
@@ -4034,6 +4099,302 @@ namespace PortalNights
                 || state == PortalNightsGameState.Planet5_RestoreSphereReady;
         }
 
+        private void SetActivePlanetEnvironment(int planetIndex)
+        {
+            int clampedPlanet = Mathf.Clamp(planetIndex, 1, 5);
+            activePlanetEnvironmentIndex = clampedPlanet;
+            SetPlanetRootEnvironment(planet2Root, clampedPlanet == 2);
+            SetPlanetRootEnvironment(planet3Root, clampedPlanet == 3);
+            SetPlanetRootEnvironment(planet4Root, clampedPlanet == 4);
+            SetPlanetRootEnvironment(planet5Root, clampedPlanet == 5);
+        }
+
+        private static int GetPlanetIndexForState(PortalNightsGameState state)
+        {
+            if (IsPlanet5State(state))
+            {
+                return 5;
+            }
+
+            if (IsPlanet4State(state))
+            {
+                return 4;
+            }
+
+            if (IsPlanet3State(state))
+            {
+                return 3;
+            }
+
+            if (IsPlanet2State(state))
+            {
+                return 2;
+            }
+
+            return 1;
+        }
+
+        private void SetPlanetRootEnvironment(Transform root, bool active)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            if (active && !root.gameObject.activeSelf)
+            {
+                root.gameObject.SetActive(true);
+            }
+
+            if (!planetEnvironmentCaches.TryGetValue(root, out PlanetEnvironmentCache cache))
+            {
+                cache = new PlanetEnvironmentCache(root);
+                planetEnvironmentCaches[root] = cache;
+            }
+
+            cache.Apply(active);
+            if (!active && hardDisableInactivePlanetRoots && cache.CanHardDisableRoot && root.gameObject.activeSelf)
+            {
+                root.gameObject.SetActive(false);
+            }
+        }
+
+        private void UpdatePerformanceDebug()
+        {
+            if (!performanceDebug)
+            {
+                return;
+            }
+
+            performanceDebugTimer -= Time.unscaledDeltaTime;
+            if (performanceDebugTimer > 0f)
+            {
+                return;
+            }
+
+            performanceDebugTimer = 2f;
+            int projectileCount = FindObjectsByType<PortalNightsProjectile>(FindObjectsSortMode.None).Length;
+            int burstCount = CountActiveNamedObjects("PN_VFX_Burst");
+            int floatingTextCount = CountActiveNamedObjects("PN_FloatingText");
+            int extraBeamCount = CountActiveNamedObjects("PN_Turret_ExtraBeam");
+            int pickupCount = FindObjectsByType<PortalNightsPickup>(FindObjectsSortMode.None).Length;
+            int enemyCount = FindObjectsByType<PortalNightsEnemy>(FindObjectsSortMode.None).Length;
+            int particleCount = FindObjectsByType<ParticleSystem>(FindObjectsSortMode.None).Length;
+            int lightCount = FindObjectsByType<Light>(FindObjectsSortMode.None).Length;
+            int rendererCount = FindObjectsByType<Renderer>(FindObjectsSortMode.None).Length;
+            float sampleSeconds = 2f;
+            float projectileSpawnsPerSecond = PortalNightsProjectile.ConsumeSpawnCount() / sampleSeconds;
+            float burstSpawnsPerSecond = PortalNightsVfx.ConsumeBurstSpawnCount() / sampleSeconds;
+            float turretShotsPerSecond = PortalNightsAlly.ConsumeTurretShotCount() / sampleSeconds;
+            float fps = 1f / Mathf.Max(Time.unscaledDeltaTime, 0.0001f);
+            Debug.Log(
+                "[PortalNightsPerf] fps=" + Mathf.RoundToInt(fps)
+                + " state=" + GameState
+                + " projectiles=" + projectileCount
+                + " bursts=" + burstCount
+                + " floatingText=" + floatingTextCount
+                + " extraBeams=" + extraBeamCount
+                + " pickups=" + pickupCount
+                + " enemies=" + enemyCount
+                + " turrets=" + CountActiveAllies()
+                + " particles=" + particleCount
+                + " lights=" + lightCount
+                + " renderers=" + rendererCount
+                + " projectileSpawns/s=" + projectileSpawnsPerSecond.ToString("0.0")
+                + " burstSpawns/s=" + burstSpawnsPerSecond.ToString("0.0")
+                + " turretShots/s=" + turretShotsPerSecond.ToString("0.0")
+                + " activePlanet=" + activePlanetEnvironmentIndex
+                + " Planet2_CrystalMoon=" + IsPlanetRootLoadActive(planet2Root)
+                + " Planet3_AshRelayStation=" + IsPlanetRootLoadActive(planet3Root)
+                + " Planet4_SwarmExpanse=" + IsPlanetRootLoadActive(planet4Root)
+                + " Planet5_CrimsonSingularity=" + IsPlanetRootLoadActive(planet5Root),
+                this);
+        }
+
+        private int CountActiveAllies()
+        {
+            int count = 0;
+            for (int i = allies.Count - 1; i >= 0; i--)
+            {
+                PortalNightsAlly ally = allies[i];
+                if (ally == null)
+                {
+                    allies.RemoveAt(i);
+                    continue;
+                }
+
+                if (ally.gameObject.activeInHierarchy)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static int CountActiveNamedObjects(string objectName)
+        {
+            int count = 0;
+            Transform[] transforms = FindObjectsByType<Transform>(FindObjectsSortMode.None);
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                Transform candidate = transforms[i];
+                if (candidate != null && candidate.gameObject.activeInHierarchy && candidate.name == objectName)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private bool IsPlanetRootLoadActive(Transform root)
+        {
+            return root != null
+                && root.gameObject.activeInHierarchy
+                && (!planetEnvironmentCaches.TryGetValue(root, out PlanetEnvironmentCache cache) || cache.RenderLoadActive);
+        }
+
+        private static bool ShouldTogglePlanetBehaviour(MonoBehaviour behaviour)
+        {
+            if (behaviour == null || behaviour is NetworkBehaviour)
+            {
+                return false;
+            }
+
+            return behaviour is PortalNightsPlanet4HiveRift
+                || behaviour is PortalNightsPlanet5HealingSphere
+                || behaviour is PortalNightsPlanet5Stabilizer
+                || behaviour is PortalNightsDamageTarget;
+        }
+
+        private sealed class PlanetEnvironmentCache
+        {
+            private readonly Renderer[] renderers;
+            private readonly bool[] rendererEnabled;
+            private readonly Light[] lights;
+            private readonly bool[] lightEnabled;
+            private readonly Collider[] colliders;
+            private readonly bool[] colliderEnabled;
+            private readonly ParticleSystem[] particleSystems;
+            private readonly bool[] particleShouldPlayWhenActive;
+            private readonly MonoBehaviour[] behaviours;
+            private readonly bool[] behaviourEnabled;
+
+            public bool RenderLoadActive { get; private set; }
+            public bool CanHardDisableRoot { get; }
+
+            public PlanetEnvironmentCache(Transform root)
+            {
+                CanHardDisableRoot = root.GetComponentsInChildren<NetworkObject>(true).Length == 0;
+                renderers = root.GetComponentsInChildren<Renderer>(true);
+                rendererEnabled = new bool[renderers.Length];
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    rendererEnabled[i] = renderers[i] != null && renderers[i].enabled;
+                }
+
+                lights = root.GetComponentsInChildren<Light>(true);
+                lightEnabled = new bool[lights.Length];
+                for (int i = 0; i < lights.Length; i++)
+                {
+                    lightEnabled[i] = lights[i] != null && lights[i].enabled;
+                }
+
+                colliders = root.GetComponentsInChildren<Collider>(true);
+                colliderEnabled = new bool[colliders.Length];
+                for (int i = 0; i < colliders.Length; i++)
+                {
+                    colliderEnabled[i] = colliders[i] != null && colliders[i].enabled;
+                }
+
+                particleSystems = root.GetComponentsInChildren<ParticleSystem>(true);
+                particleShouldPlayWhenActive = new bool[particleSystems.Length];
+                for (int i = 0; i < particleSystems.Length; i++)
+                {
+                    if (particleSystems[i] == null)
+                    {
+                        continue;
+                    }
+
+                    ParticleSystem.MainModule main = particleSystems[i].main;
+                    particleShouldPlayWhenActive[i] = particleSystems[i].isPlaying || main.loop;
+                }
+
+                List<MonoBehaviour> toggledBehaviours = new List<MonoBehaviour>();
+                MonoBehaviour[] allBehaviours = root.GetComponentsInChildren<MonoBehaviour>(true);
+                for (int i = 0; i < allBehaviours.Length; i++)
+                {
+                    MonoBehaviour behaviour = allBehaviours[i];
+                    if (ShouldTogglePlanetBehaviour(behaviour))
+                    {
+                        toggledBehaviours.Add(behaviour);
+                    }
+                }
+
+                behaviours = toggledBehaviours.ToArray();
+                behaviourEnabled = new bool[behaviours.Length];
+                for (int i = 0; i < behaviours.Length; i++)
+                {
+                    behaviourEnabled[i] = behaviours[i] != null && behaviours[i].enabled;
+                }
+            }
+
+            public void Apply(bool active)
+            {
+                RenderLoadActive = active;
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    if (renderers[i] != null)
+                    {
+                        renderers[i].enabled = active && rendererEnabled[i];
+                    }
+                }
+
+                for (int i = 0; i < lights.Length; i++)
+                {
+                    if (lights[i] != null)
+                    {
+                        lights[i].enabled = active && lightEnabled[i];
+                    }
+                }
+
+                for (int i = 0; i < colliders.Length; i++)
+                {
+                    if (colliders[i] != null)
+                    {
+                        colliders[i].enabled = active && colliderEnabled[i];
+                    }
+                }
+
+                for (int i = 0; i < behaviours.Length; i++)
+                {
+                    if (behaviours[i] != null)
+                    {
+                        behaviours[i].enabled = active && behaviourEnabled[i];
+                    }
+                }
+
+                for (int i = 0; i < particleSystems.Length; i++)
+                {
+                    ParticleSystem particleSystem = particleSystems[i];
+                    if (particleSystem == null)
+                    {
+                        continue;
+                    }
+
+                    if (active && particleShouldPlayWhenActive[i])
+                    {
+                        particleSystem.Play(true);
+                    }
+                    else if (!active)
+                    {
+                        particleSystem.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                    }
+                }
+            }
+        }
+
         private void EnsurePlanet3Area()
         {
             Transform arenaRoot = GameObject.Find("PortalNightsArena")?.transform;
@@ -4080,6 +4441,7 @@ namespace PortalNights
             }
 
             EnsurePlanet3Area();
+            SetActivePlanetEnvironment(3);
             if (planet3Root == null || planet3RelayHealth == null)
             {
                 BroadcastToastClientRpc("PLANET 3 MAP MISSING");
@@ -4665,7 +5027,7 @@ namespace PortalNights
             Renderer renderer = gameObject.GetComponent<Renderer>();
             if (renderer != null && material != null)
             {
-                renderer.material = material;
+                renderer.sharedMaterial = material;
             }
 
             Collider collider = gameObject.GetComponent<Collider>();
@@ -4961,6 +5323,11 @@ namespace PortalNights
         [ClientRpc]
         private void StateChangedClientRpc(string stateName)
         {
+            if (System.Enum.TryParse(stateName, out PortalNightsGameState parsedState))
+            {
+                SetActivePlanetEnvironment(GetPlanetIndexForState(parsedState));
+            }
+
             PortalNightsHud.Instance?.ShowToast(stateName.Replace('_', ' '));
         }
 
