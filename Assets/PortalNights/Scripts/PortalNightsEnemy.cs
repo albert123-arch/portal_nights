@@ -30,6 +30,7 @@ namespace PortalNights
         private bool deathHandled;
 
         public PortalNightsHealth Health => health;
+        public PortalNightsEnemyKind EnemyKind => enemyKind;
         public PortalNightsLane AssignedLane => (PortalNightsLane)assignedLane.Value;
         public Vector3 AimPoint
         {
@@ -111,6 +112,50 @@ namespace PortalNights
             health.ServerInitialize(baseHealth * healthScale, true);
             attackDamage = (kind == PortalNightsEnemyKind.Brute ? 15f : 4.5f) * damageScale;
             moveSpeed = (kind == PortalNightsEnemyKind.Brute ? 1.35f : 1.85f) + Mathf.Min(1.15f, wave * 0.05f);
+        }
+
+        public void ConfigureDirectServer(PortalNightsEnemyKind kind, float maxHealth, float speed, float damage, int reward)
+        {
+            if (!PortalNightsNet.ServerCanWrite(this))
+            {
+                return;
+            }
+
+            enemyKind = kind;
+            baseHealth = Mathf.Max(1f, maxHealth);
+            moveSpeed = Mathf.Max(0.1f, speed);
+            attackDamage = Mathf.Max(0f, damage);
+            coinReward = Mathf.Max(0, reward);
+            if (health == null)
+            {
+                health = GetComponent<PortalNightsHealth>();
+            }
+
+            health?.ServerInitialize(baseHealth, true);
+        }
+
+        public void ApplyEnhancedServer(float healthMultiplier, float damageMultiplier, float scaleMultiplier)
+        {
+            if (!IsServer || health == null)
+            {
+                return;
+            }
+
+            health.ServerInitialize(Mathf.Max(1f, health.MaxHealth * healthMultiplier), true);
+            attackDamage *= Mathf.Max(0.1f, damageMultiplier);
+            transform.localScale *= Mathf.Max(0.1f, scaleMultiplier);
+        }
+
+        public void ApplyUniverseScalingServer(float healthMultiplier, float damageMultiplier, int scaledReward)
+        {
+            if (!IsServer || health == null)
+            {
+                return;
+            }
+
+            health.ServerInitialize(Mathf.Max(1f, health.MaxHealth * Mathf.Max(0.1f, healthMultiplier)), true);
+            attackDamage *= Mathf.Max(0.1f, damageMultiplier);
+            coinReward = Mathf.Max(0, scaledReward);
         }
 
         public void ConfigureLaneServer(PortalNightsLane lane, PortalNightsLanePath path)

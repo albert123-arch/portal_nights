@@ -56,10 +56,20 @@ namespace PortalNights
 
         public void Configure(int buildCost, Transform socket, Renderer padIndicator, Light light)
         {
-            Configure(buildCost, Mathf.RoundToInt(buildCost * 1.5f), Mathf.RoundToInt(buildCost * 2.15f), socket, padIndicator, light);
+            Configure(buildCost, GetDefaultLevel2Cost(buildCost), GetDefaultLevel3Cost(buildCost), socket, padIndicator, light);
+        }
+
+        public void Configure(int buildCost, Transform socket, Renderer padIndicator, Light light, bool countsForPortal)
+        {
+            Configure(buildCost, GetDefaultLevel2Cost(buildCost), GetDefaultLevel3Cost(buildCost), socket, padIndicator, light, countsForPortal);
         }
 
         public void Configure(int buildCost, int level2Cost, int level3Cost, Transform socket, Renderer padIndicator, Light light)
+        {
+            Configure(buildCost, level2Cost, level3Cost, socket, padIndicator, light, requiredForPortal);
+        }
+
+        public void Configure(int buildCost, int level2Cost, int level3Cost, Transform socket, Renderer padIndicator, Light light, bool countsForPortal)
         {
             cost = buildCost;
             upgradeLevel2Cost = level2Cost;
@@ -67,6 +77,7 @@ namespace PortalNights
             turretSocket = socket;
             indicator = padIndicator;
             padLight = light;
+            requiredForPortal = countsForPortal;
             MakeNonBlocking();
             RefreshVisual();
         }
@@ -147,6 +158,16 @@ namespace PortalNights
             return upgradeLevel3Cost;
         }
 
+        private static int GetDefaultLevel2Cost(int buildCost)
+        {
+            return Mathf.RoundToInt(buildCost * 1.5f);
+        }
+
+        private static int GetDefaultLevel3Cost(int buildCost)
+        {
+            return buildCost == 120 ? 260 : Mathf.RoundToInt(buildCost * 2.15f);
+        }
+
         private void HandleLevelChanged(int previous, int current)
         {
             RefreshVisual();
@@ -162,15 +183,41 @@ namespace PortalNights
             Color color = GetIndicatorColor();
             if (indicator != null)
             {
-                indicator.material.color = color;
-                if (indicator.material.HasProperty("_BaseColor"))
+                Material material = Application.isPlaying ? indicator.material : indicator.sharedMaterial;
+                if (material != null && Application.isPlaying)
                 {
-                    indicator.material.SetColor("_BaseColor", color);
+                    material.color = color;
+                    if (material.HasProperty("_BaseColor"))
+                    {
+                        material.SetColor("_BaseColor", color);
+                    }
+
+                    if (material.HasProperty("_EmissionColor"))
+                    {
+                        material.EnableKeyword("_EMISSION");
+                        material.SetColor("_EmissionColor", color * (IsAvailable ? 2.8f : 1.2f));
+                    }
                 }
-                if (indicator.material.HasProperty("_EmissionColor"))
+                else if (material != null)
                 {
-                    indicator.material.EnableKeyword("_EMISSION");
-                    indicator.material.SetColor("_EmissionColor", color * (IsAvailable ? 2.8f : 1.2f));
+                    MaterialPropertyBlock block = new MaterialPropertyBlock();
+                    indicator.GetPropertyBlock(block);
+                    if (material.HasProperty("_Color"))
+                    {
+                        block.SetColor("_Color", color);
+                    }
+
+                    if (material.HasProperty("_BaseColor"))
+                    {
+                        block.SetColor("_BaseColor", color);
+                    }
+
+                    if (material.HasProperty("_EmissionColor"))
+                    {
+                        block.SetColor("_EmissionColor", color * (IsAvailable ? 2.8f : 1.2f));
+                    }
+
+                    indicator.SetPropertyBlock(block);
                 }
             }
 

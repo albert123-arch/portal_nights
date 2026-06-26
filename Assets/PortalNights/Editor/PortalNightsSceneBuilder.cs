@@ -37,6 +37,18 @@ namespace PortalNights.EditorTools
         private static Material bruteArmor;
         private static Material coinGold;
         private static Material glassDark;
+        private static Material planet2FloorDark;
+        private static Material planet2SecondaryMetal;
+        private static Material planet2IndigoWall;
+        private static Material planet2CyanCrystal;
+        private static Material planet2VioletCrystal;
+        private static Material planet2LeftPortal;
+        private static Material planet2LeftPortalDormant;
+        private static Material planet2RightPortal;
+        private static Material planet2RightPortalDormant;
+        private static Material planet2Gold;
+        private static Material planet2ColdWhite;
+        private static Material planet2GlassCyan;
         private static Font hudFont;
 
         [MenuItem("Portal Nights/Rebuild Arena Defense Scene")]
@@ -78,6 +90,113 @@ namespace PortalNights.EditorTools
             RebuildArenaDefenseScene();
         }
 
+        [MenuItem("Portal Nights/Rebuild Planet 2 Crystal Moon Only")]
+        public static void BuildPlanet2CrystalMoon()
+        {
+            EnsureFolders();
+            LoadOrCreateMaterials();
+
+            Scene scene = SceneManager.GetActiveScene();
+            if (!scene.IsValid() || scene.path != ScenePath)
+            {
+                if (!File.Exists(ScenePath))
+                {
+                    Debug.LogError("[PortalNights] Portal Nights scene not found at " + ScenePath);
+                    return;
+                }
+
+                scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+            }
+
+            GameObject arenaObject = GameObject.Find("PortalNightsArena");
+            if (arenaObject == null)
+            {
+                Debug.LogError("[PortalNights] PortalNightsArena root was not found. Planet 1 was not modified.");
+                return;
+            }
+
+            Transform existingPlanet2 = arenaObject.transform.Find("Planet2_CrystalMoon");
+            if (existingPlanet2 != null)
+            {
+                Object.DestroyImmediate(existingPlanet2.gameObject);
+            }
+
+            Transform planet2Root = CreateChild(arenaObject.transform, "Planet2_CrystalMoon");
+            planet2Root.localPosition = new Vector3(0f, 0f, 92f);
+            planet2Root.localRotation = Quaternion.identity;
+            planet2Root.localScale = Vector3.one;
+
+            BuildPlanet2CrystalMoonHierarchy(planet2Root);
+            UpdatePlanet2ControllerDefaults(planet2Root);
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene, ScenePath);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            Debug.Log("[PortalNights] Planet 2 Crystal Moon rebuilt only under PortalNightsArena/Planet2_CrystalMoon. Footprint: 110 x 90 units.");
+        }
+
+        [MenuItem("Portal Nights/Capture Planet 2 Crystal Moon Screenshots")]
+        public static void CapturePlanet2CrystalMoonScreenshots()
+        {
+            Scene scene = SceneManager.GetActiveScene();
+            if (!scene.IsValid() || scene.path != ScenePath)
+            {
+                if (!File.Exists(ScenePath))
+                {
+                    Debug.LogError("[PortalNights] Portal Nights scene not found at " + ScenePath);
+                    return;
+                }
+
+                EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+            }
+
+            Transform root = GameObject.Find("PortalNightsArena")?.transform.Find("Planet2_CrystalMoon");
+            if (root == null)
+            {
+                Debug.LogError("[PortalNights] Planet2_CrystalMoon was not found. Build the map before capturing screenshots.");
+                return;
+            }
+
+            string projectRoot = Path.GetDirectoryName(Application.dataPath);
+            string captureDirectory = Path.Combine(projectRoot ?? Application.dataPath, "Logs/PortalNightsCaptures");
+            Directory.CreateDirectory(captureDirectory);
+            CapturePlanet2View(root, Path.Combine(captureDirectory, "planet2_arrival_zone.png"), new Vector3(0f, 13f, -53f), new Vector3(0f, 3.8f, 28f), 66f);
+            CapturePlanet2View(root, Path.Combine(captureDirectory, "planet2_central_sphere.png"), new Vector3(0f, 14f, -7f), new Vector3(0f, 3.8f, 34f), 68f);
+            Debug.Log("[PortalNights] Planet 2 screenshots saved to " + captureDirectory);
+        }
+
+        private static void CapturePlanet2View(Transform root, string path, Vector3 localCameraPosition, Vector3 localLookAt, float fieldOfView)
+        {
+            GameObject cameraObject = new GameObject("PN_TempPlanet2CaptureCamera");
+            Camera camera = cameraObject.AddComponent<Camera>();
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = HexColor("070B1C");
+            camera.fieldOfView = fieldOfView;
+            camera.nearClipPlane = 0.05f;
+            camera.farClipPlane = 220f;
+            camera.transform.position = root.TransformPoint(localCameraPosition);
+            Vector3 target = root.TransformPoint(localLookAt);
+            camera.transform.rotation = Quaternion.LookRotation((target - camera.transform.position).normalized, Vector3.up);
+
+            RenderTexture renderTexture = new RenderTexture(1920, 1080, 24, RenderTextureFormat.ARGB32);
+            Texture2D screenshot = new Texture2D(1920, 1080, TextureFormat.RGB24, false);
+            RenderTexture previousTarget = camera.targetTexture;
+            RenderTexture previousActive = RenderTexture.active;
+            camera.targetTexture = renderTexture;
+            RenderTexture.active = renderTexture;
+            camera.Render();
+            screenshot.ReadPixels(new Rect(0f, 0f, 1920f, 1080f), 0, 0);
+            screenshot.Apply();
+            File.WriteAllBytes(path, screenshot.EncodeToPNG());
+            camera.targetTexture = previousTarget;
+            RenderTexture.active = previousActive;
+            Object.DestroyImmediate(screenshot);
+            Object.DestroyImmediate(renderTexture);
+            Object.DestroyImmediate(cameraObject);
+        }
+
         private static void EnsureFolders()
         {
             foreach (string path in new[] { Root, MaterialsDir, PrefabsDir, ScenesDir, Root + "/References", Root + "/Editor", Root + "/Scripts" })
@@ -100,6 +219,28 @@ namespace PortalNights.EditorTools
             bruteArmor = CreateMaterial("PN_BruteArmor", new Color(0.34f, 0.22f, 0.16f, 1f), new Color(0.9f, 0.18f, 1.05f, 1f), 0.65f, 0.62f);
             coinGold = CreateMaterial("PN_CoinGold", new Color(1f, 0.72f, 0.12f, 1f), new Color(2.5f, 1.35f, 0.18f, 1f), 0.55f, 0.82f);
             glassDark = CreateMaterial("PN_GlassDark", new Color(0.03f, 0.055f, 0.09f, 0.7f), new Color(0.02f, 0.12f, 0.22f, 1f), 0.1f, 0.95f, true);
+            planet2FloorDark = CreateMaterial("PN_P2_FloorDark", HexColor("141A2A"), new Color(0.01f, 0.014f, 0.035f, 1f), 0.55f, 0.62f);
+            planet2SecondaryMetal = CreateMaterial("PN_P2_SecondaryMetal", HexColor("26324A"), new Color(0.02f, 0.035f, 0.07f, 1f), 0.78f, 0.7f);
+            planet2IndigoWall = CreateMaterial("PN_P2_DarkIndigo", HexColor("070B1C"), new Color(0.005f, 0.01f, 0.035f, 1f), 0.5f, 0.56f);
+            planet2CyanCrystal = CreateMaterial("PN_P2_CyanCrystal", HexColor("62F4FF"), new Color(0.44f, 2.5f, 3.2f, 1f), 0f, 0.92f);
+            planet2VioletCrystal = CreateMaterial("PN_P2_VioletCrystal", HexColor("A448FF"), new Color(1.45f, 0.5f, 3.2f, 1f), 0f, 0.9f);
+            planet2LeftPortal = CreateMaterial("PN_P2_LeftPortal_Active", HexColor("A448FF"), new Color(1.45f, 0.5f, 3.45f, 1f), 0f, 0.95f);
+            planet2LeftPortalDormant = CreateMaterial("PN_P2_LeftPortal_Dormant", HexColor("5C2C8E"), new Color(0.36f, 0.12f, 0.75f, 1f), 0f, 0.82f);
+            planet2RightPortal = CreateMaterial("PN_P2_RightPortal_Active", HexColor("FF783C"), new Color(3.2f, 1.0f, 0.25f, 1f), 0f, 0.92f);
+            planet2RightPortalDormant = CreateMaterial("PN_P2_RightPortal_Dormant", HexColor("9A4A27"), new Color(0.8f, 0.28f, 0.08f, 1f), 0f, 0.8f);
+            planet2Gold = CreateMaterial("PN_P2_RightPortal_Gold", HexColor("FFD05A"), new Color(3.1f, 1.95f, 0.45f, 1f), 0.18f, 0.86f);
+            planet2ColdWhite = CreateMaterial("PN_P2_ColdWhite", new Color(0.86f, 0.98f, 1f, 1f), new Color(1.3f, 2.4f, 2.55f, 1f), 0.05f, 0.88f);
+            planet2GlassCyan = CreateMaterial("PN_P2_GlassCyan", new Color(0.38f, 0.96f, 1f, 0.28f), new Color(0.24f, 1.8f, 2.2f, 1f), 0f, 0.94f, true);
+        }
+
+        private static Color HexColor(string hex)
+        {
+            if (!hex.StartsWith("#"))
+            {
+                hex = "#" + hex;
+            }
+
+            return ColorUtility.TryParseHtmlString(hex, out Color color) ? color : Color.white;
         }
 
         private static Material CreateMaterial(string name, Color baseColor, Color emission, float metallic, float smoothness, bool transparent = false)
@@ -308,6 +449,481 @@ namespace PortalNights.EditorTools
             vignette.intensity.Override(0.23f);
             vignette.smoothness.Override(0.55f);
             volume.profile = profile;
+        }
+
+        private static void BuildPlanet2CrystalMoonHierarchy(Transform root)
+        {
+            Transform environment = CreateChild(root, "Environment");
+            Transform floors = CreateChild(environment, "Floors");
+            Transform boundaries = CreateChild(environment, "Boundaries");
+            Transform crystals = CreateChild(environment, "Crystals");
+            Transform background = CreateChild(environment, "Background");
+            Transform arrivalZone = CreateChild(root, "ArrivalZone");
+            Transform centralPlaza = CreateChild(root, "CentralPlaza");
+            Transform leftLane = CreateChild(root, "LeftLane");
+            Transform rightLane = CreateChild(root, "RightLane");
+            Transform leftPortal = CreateChild(root, "LeftEnemyPortal");
+            Transform rightPortal = CreateChild(root, "RightEnemyPortal");
+            Transform rewardPoints = CreateChild(root, "FutureRewardPoints");
+
+            CreatePlanet2Floors(floors);
+            CreatePlanet2Boundaries(boundaries);
+            CreatePlanet2Background(background);
+            CreatePlanet2Arrival(arrivalZone, root);
+            CreatePlanet2CentralPlaza(centralPlaza, root);
+            CreatePlanet2Lanes(leftLane, rightLane);
+            CreatePlanet2EnemyPortal(leftPortal, "Left", new Vector3(-42f, 2.5f, 34f), planet2LeftPortal, planet2LeftPortalDormant, planet2VioletCrystal, new Color(0.64f, 0.28f, 1f));
+            CreatePlanet2EnemyPortal(rightPortal, "Right", new Vector3(42f, 2.5f, 34f), planet2RightPortal, planet2RightPortalDormant, planet2Gold, new Color(1f, 0.47f, 0.2f));
+            CreatePlanet2EnemySpawnMarkers(root);
+            CreatePlanet2Crystals(crystals);
+            CreatePlanet2RewardMarkers(rewardPoints);
+            CreatePlanet2Lighting(root);
+        }
+
+        private static void CreatePlanet2Floors(Transform floors)
+        {
+            CreatePrimitive("CrystalMoon_ContinuousWalkableDeck_110x90", PrimitiveType.Cube, floors, new Vector3(0f, -0.22f, -3f), new Vector3(110f, 0.44f, 90f), planet2FloorDark, true);
+            CreatePrimitive("CrystalMoon_Deck_Skirt", PrimitiveType.Cube, floors, new Vector3(0f, -0.94f, -3f), new Vector3(113f, 1.15f, 93f), planet2IndigoWall, false);
+            CreatePrimitive("ArrivalZone_MetalPlate_18x14", PrimitiveType.Cube, floors, new Vector3(0f, 0.045f, -40f), new Vector3(18f, 0.1f, 14f), planet2SecondaryMetal, false);
+            CreatePrimitive("ArrivalZone_GlowInset", PrimitiveType.Cube, floors, new Vector3(0f, 0.115f, -40f), new Vector3(13.5f, 0.055f, 0.28f), planet2CyanCrystal, false);
+            CreatePrimitive("ArrivalZone_BackGlowInset", PrimitiveType.Cube, floors, new Vector3(0f, 0.12f, -46.1f), new Vector3(14.5f, 0.055f, 0.22f), planet2VioletCrystal, false);
+            CreatePrimitive("CentralPlaza_Disc_40", PrimitiveType.Cylinder, floors, new Vector3(0f, 0.02f, 8f), new Vector3(40f, 0.13f, 40f), planet2SecondaryMetal, false);
+            CreatePrimitive("CentralPlaza_InnerCyanRing", PrimitiveType.Cylinder, floors, new Vector3(0f, 0.11f, 8f), new Vector3(27f, 0.055f, 27f), planet2FloorDark, false);
+            CreatePrimitive("CentralPlaza_CoreGlow", PrimitiveType.Cylinder, floors, new Vector3(0f, 0.17f, 8f), new Vector3(13f, 0.045f, 13f), planet2CyanCrystal, false);
+
+            CreatePlanet2Path(floors, "ArrivalRoute", new[]
+            {
+                new Vector3(0f, 0.12f, -40f),
+                new Vector3(0f, 0.12f, -22f),
+                new Vector3(0f, 0.12f, -4f),
+                new Vector3(0f, 0.12f, 8f)
+            }, 12f, planet2SecondaryMetal, planet2CyanCrystal);
+
+            CreatePlanet2Path(floors, "LeftEnemyLane_Surface", Planet2LeftRoute(), 11.5f, planet2SecondaryMetal, planet2VioletCrystal);
+            CreatePlanet2Path(floors, "RightEnemyLane_Surface", Planet2RightRoute(), 11.5f, planet2SecondaryMetal, planet2RightPortal);
+            CreatePlanet2Path(floors, "CentralCrossRoute", new[]
+            {
+                new Vector3(-34f, 0.14f, 22f),
+                new Vector3(-16f, 0.14f, 20f),
+                new Vector3(0f, 0.14f, 20f),
+                new Vector3(16f, 0.14f, 20f),
+                new Vector3(34f, 0.14f, 22f)
+            }, 9.5f, planet2SecondaryMetal, planet2ColdWhite);
+
+            CreatePlanet2FloorGrid(floors);
+        }
+
+        private static void CreatePlanet2FloorGrid(Transform floors)
+        {
+            for (int i = -5; i <= 5; i++)
+            {
+                float x = i * 10f;
+                CreatePrimitive("Deck_Subtle_Longitudinal_Glow_" + i, PrimitiveType.Cube, floors, new Vector3(x, 0.035f, -3f), new Vector3(0.08f, 0.045f, 84f), i % 2 == 0 ? planet2CyanCrystal : planet2VioletCrystal, false);
+            }
+
+            for (int i = -4; i <= 4; i++)
+            {
+                float z = -3f + i * 10f;
+                CreatePrimitive("Deck_Subtle_Cross_Glow_" + i, PrimitiveType.Cube, floors, new Vector3(0f, 0.04f, z), new Vector3(100f, 0.045f, 0.08f), i % 2 == 0 ? planet2SecondaryMetal : planet2IndigoWall, false);
+            }
+        }
+
+        private static void CreatePlanet2Boundaries(Transform boundaries)
+        {
+            CreateBoundaryWall(boundaries, "North_VisibleCliffWall", new Vector3(0f, 1.12f, 42.2f), new Vector3(112f, 2.25f, 1.4f), planet2SecondaryMetal, planet2CyanCrystal);
+            CreateBoundaryWall(boundaries, "South_VisibleCliffWall", new Vector3(0f, 1.12f, -48.2f), new Vector3(112f, 2.25f, 1.4f), planet2SecondaryMetal, planet2VioletCrystal);
+            CreateBoundaryWall(boundaries, "West_VisibleCliffWall", new Vector3(-55.2f, 1.12f, -3f), new Vector3(1.4f, 2.25f, 91f), planet2SecondaryMetal, planet2VioletCrystal);
+            CreateBoundaryWall(boundaries, "East_VisibleCliffWall", new Vector3(55.2f, 1.12f, -3f), new Vector3(1.4f, 2.25f, 91f), planet2SecondaryMetal, planet2RightPortal);
+            CreatePrimitive("North_Cliff_DropShadow", PrimitiveType.Cube, boundaries, new Vector3(0f, -1.35f, 44f), new Vector3(115f, 2.2f, 3.8f), planet2IndigoWall, false);
+            CreatePrimitive("South_Cliff_DropShadow", PrimitiveType.Cube, boundaries, new Vector3(0f, -1.35f, -50f), new Vector3(115f, 2.2f, 3.8f), planet2IndigoWall, false);
+            CreatePrimitive("West_Cliff_DropShadow", PrimitiveType.Cube, boundaries, new Vector3(-57f, -1.35f, -3f), new Vector3(3.8f, 2.2f, 94f), planet2IndigoWall, false);
+            CreatePrimitive("East_Cliff_DropShadow", PrimitiveType.Cube, boundaries, new Vector3(57f, -1.35f, -3f), new Vector3(3.8f, 2.2f, 94f), planet2IndigoWall, false);
+        }
+
+        private static void CreateBoundaryWall(Transform parent, string name, Vector3 position, Vector3 scale, Material wallMaterial, Material glowMaterial)
+        {
+            GameObject wall = CreatePrimitive(name, PrimitiveType.Cube, parent, position, scale, wallMaterial, true);
+            Vector3 glowScale = scale.x > scale.z
+                ? new Vector3(scale.x - 6f, 0.11f, 0.14f)
+                : new Vector3(0.14f, 0.11f, scale.z - 6f);
+            Vector3 glowOffset = scale.x > scale.z ? new Vector3(0f, 0.72f, -0.72f) : new Vector3(-0.72f, 0.72f, 0f);
+            CreatePrimitive(name + "_ReadableEdgeGlow", PrimitiveType.Cube, wall.transform, glowOffset, glowScale, glowMaterial, false);
+        }
+
+        private static void CreatePlanet2Background(Transform background)
+        {
+            CreatePrimitive("DarkIndigo_Sky_Canopy", PrimitiveType.Cube, background, new Vector3(0f, 34f, -3f), new Vector3(130f, 0.6f, 105f), planet2IndigoWall, false);
+            CreatePrimitive("Far_North_Indigo_Backdrop", PrimitiveType.Cube, background, new Vector3(0f, 15f, 52f), new Vector3(128f, 30f, 1.1f), planet2IndigoWall, false);
+            CreatePrimitive("Far_West_Indigo_Backdrop", PrimitiveType.Cube, background, new Vector3(-66f, 14f, -3f), new Vector3(1.1f, 28f, 100f), planet2IndigoWall, false);
+            CreatePrimitive("Far_East_Indigo_Backdrop", PrimitiveType.Cube, background, new Vector3(66f, 14f, -3f), new Vector3(1.1f, 28f, 100f), planet2IndigoWall, false);
+        }
+
+        private static void CreatePlanet2Arrival(Transform arrivalZone, Transform root)
+        {
+            Transform playerArrival = CreateChild(arrivalZone, "PlayerArrivalPoint");
+            playerArrival.localPosition = new Vector3(0f, 1.12f, -40f);
+            Transform allyArrival = CreateChild(arrivalZone, "AllyArrivalPoint");
+            allyArrival.localPosition = new Vector3(2.2f, 1.12f, -40f);
+            Transform compatibilityArrival = CreateChild(root, "ArrivalPoint");
+            compatibilityArrival.localPosition = playerArrival.localPosition;
+            CreatePrimitive("ArrivalZone_LowGate_Left", PrimitiveType.Cube, arrivalZone, new Vector3(-9.2f, 0.75f, -40f), new Vector3(0.45f, 1.5f, 12.5f), planet2SecondaryMetal, true);
+            CreatePrimitive("ArrivalZone_LowGate_Right", PrimitiveType.Cube, arrivalZone, new Vector3(9.2f, 0.75f, -40f), new Vector3(0.45f, 1.5f, 12.5f), planet2SecondaryMetal, true);
+            CreateWorldLabel(arrivalZone, "ARRIVAL ZONE", new Vector3(0f, 0.95f, -44f), new Color(0.68f, 0.96f, 1f));
+        }
+
+        private static void CreatePlanet2CentralPlaza(Transform centralPlaza, Transform root)
+        {
+            CreatePrimitive("SphereRing_OuterColdWhite", PrimitiveType.Cylinder, centralPlaza, new Vector3(0f, 0.24f, 8f), new Vector3(15.5f, 0.1f, 15.5f), planet2ColdWhite, false);
+            CreatePrimitive("SphereRing_InnerDarkMetal", PrimitiveType.Cylinder, centralPlaza, new Vector3(0f, 0.31f, 8f), new Vector3(10.2f, 0.1f, 10.2f), planet2FloorDark, false);
+
+            GameObject sphereObjective = new GameObject("SphereObjective");
+            sphereObjective.transform.SetParent(root, false);
+            sphereObjective.transform.localPosition = new Vector3(0f, 0f, 8f);
+            sphereObjective.AddComponent<NetworkObject>();
+            PortalNightsHealth sphereHealth = sphereObjective.AddComponent<PortalNightsHealth>();
+            sphereHealth.SetBaseMaxHealth(500f);
+            SphereCollider collider = sphereObjective.AddComponent<SphereCollider>();
+            collider.center = new Vector3(0f, 1.45f, 0f);
+            collider.radius = 1.55f;
+            collider.isTrigger = true;
+
+            CreatePrimitive("Sphere_Pedestal", PrimitiveType.Cylinder, sphereObjective.transform, new Vector3(0f, 0.32f, 0f), new Vector3(5.8f, 0.62f, 5.8f), planet2SecondaryMetal, false);
+            CreatePrimitive("Sphere_Core_Cyan", PrimitiveType.Sphere, sphereObjective.transform, new Vector3(0f, 1.45f, 0f), new Vector3(2.7f, 2.7f, 2.7f), planet2CyanCrystal, false);
+            CreatePrimitive("Sphere_Shield_Glass", PrimitiveType.Sphere, sphereObjective.transform, new Vector3(0f, 1.45f, 0f), new Vector3(5.2f, 5.2f, 5.2f), planet2GlassCyan, false);
+
+            Light sphereLight = sphereObjective.AddComponent<Light>();
+            sphereLight.type = LightType.Point;
+            sphereLight.color = HexColor("62F4FF");
+            sphereLight.range = 28f;
+            sphereLight.intensity = 7.2f;
+
+            Transform utilityPads = CreateChild(centralPlaza, "UtilityBuildPads");
+            CreateVisualBuildPad(utilityPads, "SphereUtilityPad_Left", new Vector3(-11f, 0.26f, 3.5f), planet2CyanCrystal);
+            CreateVisualBuildPad(utilityPads, "SphereUtilityPad_Right", new Vector3(11f, 0.26f, 3.5f), planet2VioletCrystal);
+            CreateWorldLabel(centralPlaza, "CRYSTAL SPHERE", new Vector3(0f, 1.1f, -2.5f), new Color(0.75f, 0.98f, 1f));
+        }
+
+        private static void CreatePlanet2Lanes(Transform leftLane, Transform rightLane)
+        {
+            Transform leftPath = CreateChild(leftLane, "Path");
+            Transform leftWaypoints = CreateChild(leftLane, "Waypoints");
+            Transform leftPads = CreateChild(leftLane, "BuildPads");
+            Transform leftDecorations = CreateChild(leftLane, "Decorations");
+            Transform rightPath = CreateChild(rightLane, "Path");
+            Transform rightWaypoints = CreateChild(rightLane, "Waypoints");
+            Transform rightPads = CreateChild(rightLane, "BuildPads");
+            Transform rightDecorations = CreateChild(rightLane, "Decorations");
+
+            Vector3[] leftRoute = Planet2LeftRoute();
+            Vector3[] rightRoute = Planet2RightRoute();
+            CreatePlanet2Path(leftPath, "LeftLane_ReadableRoute", leftRoute, 10.8f, planet2SecondaryMetal, planet2VioletCrystal);
+            CreatePlanet2Path(rightPath, "RightLane_ReadableRoute", rightRoute, 10.8f, planet2SecondaryMetal, planet2RightPortal);
+            CreatePlanet2Waypoints(leftWaypoints, "Left", leftRoute, planet2VioletCrystal);
+            CreatePlanet2Waypoints(rightWaypoints, "Right", rightRoute, planet2RightPortal);
+
+            CreateVisualBuildPad(leftPads, "LeftLane_TurretPad_01", new Vector3(-15f, 0.28f, 13f), planet2VioletCrystal);
+            CreateVisualBuildPad(leftPads, "LeftLane_TurretPad_02", new Vector3(-27f, 0.28f, 25f), planet2VioletCrystal);
+            CreateVisualBuildPad(leftPads, "LeftLane_TurretPad_03", new Vector3(-42f, 0.28f, 27.5f), planet2VioletCrystal);
+            CreateVisualBuildPad(rightPads, "RightLane_TurretPad_01", new Vector3(15f, 0.28f, 13f), planet2RightPortal);
+            CreateVisualBuildPad(rightPads, "RightLane_TurretPad_02", new Vector3(27f, 0.28f, 25f), planet2RightPortal);
+            CreateVisualBuildPad(rightPads, "RightLane_TurretPad_03", new Vector3(42f, 0.28f, 27.5f), planet2RightPortal);
+
+            CreateWorldLabel(leftLane, "LEFT CRYSTAL LANE", new Vector3(-23f, 1.1f, 20f), new Color(0.77f, 0.5f, 1f));
+            CreateWorldLabel(rightLane, "RIGHT SOLAR LANE", new Vector3(23f, 1.1f, 20f), new Color(1f, 0.76f, 0.34f));
+            CreateLaneDecoration(leftDecorations, -1f, planet2VioletCrystal);
+            CreateLaneDecoration(rightDecorations, 1f, planet2RightPortal);
+        }
+
+        private static Vector3[] Planet2LeftRoute()
+        {
+            return new[]
+            {
+                new Vector3(0f, 0.16f, 8f),
+                new Vector3(-10f, 0.16f, 15f),
+                new Vector3(-24f, 0.16f, 28f),
+                new Vector3(-36f, 0.16f, 25f),
+                new Vector3(-42f, 0.16f, 34f)
+            };
+        }
+
+        private static Vector3[] Planet2RightRoute()
+        {
+            return new[]
+            {
+                new Vector3(0f, 0.16f, 8f),
+                new Vector3(10f, 0.16f, 15f),
+                new Vector3(24f, 0.16f, 28f),
+                new Vector3(36f, 0.16f, 25f),
+                new Vector3(42f, 0.16f, 34f)
+            };
+        }
+
+        private static void CreatePlanet2Path(Transform parent, string name, Vector3[] points, float width, Material plateMaterial, Material accentMaterial)
+        {
+            for (int i = 0; i < points.Length - 1; i++)
+            {
+                CreatePlanet2PathSegment(name + "_Plate_" + (i + 1).ToString("00"), parent, points[i], points[i + 1], width, 0.08f, plateMaterial, false, 0f);
+                CreatePlanet2PathSegment(name + "_CenterGlow_" + (i + 1).ToString("00"), parent, points[i] + Vector3.up * 0.07f, points[i + 1] + Vector3.up * 0.07f, 0.38f, 0.055f, accentMaterial, false, 0f);
+                CreatePlanet2PathSegment(name + "_LeftEdgeGlow_" + (i + 1).ToString("00"), parent, points[i] + Vector3.up * 0.08f, points[i + 1] + Vector3.up * 0.08f, 0.2f, 0.05f, accentMaterial, false, -width * 0.42f);
+                CreatePlanet2PathSegment(name + "_RightEdgeGlow_" + (i + 1).ToString("00"), parent, points[i] + Vector3.up * 0.08f, points[i + 1] + Vector3.up * 0.08f, 0.2f, 0.05f, accentMaterial, false, width * 0.42f);
+            }
+        }
+
+        private static GameObject CreatePlanet2PathSegment(string name, Transform parent, Vector3 start, Vector3 end, float width, float thickness, Material material, bool keepCollider, float sideOffset)
+        {
+            Vector3 flatDirection = PortalNightsMath.Flat(end - start);
+            float length = flatDirection.magnitude;
+            Vector3 direction = length <= 0.001f ? Vector3.forward : flatDirection / length;
+            Vector3 side = Vector3.Cross(Vector3.up, direction).normalized * sideOffset;
+            Vector3 midpoint = (start + end) * 0.5f + side;
+            GameObject segment = CreatePrimitive(name, PrimitiveType.Cube, parent, midpoint, new Vector3(width, thickness, length), material, keepCollider);
+            segment.transform.localRotation = Quaternion.LookRotation(direction, Vector3.up);
+            return segment;
+        }
+
+        private static void CreatePlanet2Waypoints(Transform parent, string laneName, Vector3[] points, Material markerMaterial)
+        {
+            for (int i = 0; i < points.Length; i++)
+            {
+                Transform waypoint = CreateChild(parent, laneName + "_Waypoint_" + (i + 1).ToString("00"));
+                waypoint.localPosition = points[i] + Vector3.up * 0.24f;
+                CreatePrimitive("WaypointMarker", PrimitiveType.Cylinder, waypoint, Vector3.zero, new Vector3(0.65f, 0.04f, 0.65f), markerMaterial, false);
+            }
+        }
+
+        private static void CreateVisualBuildPad(Transform parent, string name, Vector3 position, Material accent)
+        {
+            GameObject pad = new GameObject(name);
+            pad.transform.SetParent(parent, false);
+            pad.transform.localPosition = position;
+            Vector3 facing = PortalNightsMath.Flat(new Vector3(0f, 0f, 8f) - position);
+            pad.transform.localRotation = facing.sqrMagnitude <= 0.001f ? Quaternion.identity : Quaternion.LookRotation(facing.normalized, Vector3.up);
+            pad.AddComponent<NetworkObject>();
+            BoxCollider collider = pad.AddComponent<BoxCollider>();
+            collider.size = new Vector3(4.8f, 0.55f, 4.8f);
+            collider.center = new Vector3(0f, 0.18f, 0f);
+
+            CreatePrimitive("Pad_Base", PrimitiveType.Cylinder, pad.transform, Vector3.zero, new Vector3(4.8f, 0.22f, 4.8f), planet2SecondaryMetal, false);
+            Renderer ring = CreatePrimitive("Pad_Emissive_Ring", PrimitiveType.Cylinder, pad.transform, new Vector3(0f, 0.16f, 0f), new Vector3(4.25f, 0.08f, 4.25f), accent, false).GetComponent<Renderer>();
+            CreatePrimitive("Pad_Center_DarkSocket", PrimitiveType.Cylinder, pad.transform, new Vector3(0f, 0.27f, 0f), new Vector3(2.1f, 0.12f, 2.1f), planet2FloorDark, false);
+            Transform socket = CreateChild(pad.transform, "TurretSocket");
+            socket.localPosition = new Vector3(0f, 0.58f, 0f);
+
+            Color lightColor = Color.cyan;
+            if (accent != null)
+            {
+                if (accent.HasProperty("_BaseColor"))
+                {
+                    lightColor = accent.GetColor("_BaseColor");
+                }
+                else if (accent.HasProperty("_Color"))
+                {
+                    lightColor = accent.GetColor("_Color");
+                }
+            }
+
+            Light light = pad.AddComponent<Light>();
+            light.type = LightType.Point;
+            light.range = 6.5f;
+            light.intensity = 1.65f;
+            light.color = lightColor;
+
+            PortalNightsBuildPoint buildPoint = pad.AddComponent<PortalNightsBuildPoint>();
+            buildPoint.Configure(BuildPadCost, 180, 260, socket, ring, light, false);
+        }
+
+        private static void CreateLaneDecoration(Transform parent, float sideSign, Material accent)
+        {
+            for (int i = 0; i < 5; i++)
+            {
+                float z = 8f + i * 7f;
+                float x = sideSign * (18f + i * 6f);
+                CreatePrimitive("Lane_LowRail_" + i, PrimitiveType.Cube, parent, new Vector3(x, 0.55f, z), new Vector3(0.45f, 1.1f, 4.8f), planet2SecondaryMetal, true);
+                CreatePrimitive("Lane_RailGlow_" + i, PrimitiveType.Cube, parent, new Vector3(x - sideSign * 0.26f, 1.18f, z), new Vector3(0.12f, 0.16f, 3.8f), accent, false);
+            }
+        }
+
+        private static void CreatePlanet2EnemyPortal(Transform portalRoot, string side, Vector3 localPosition, Material activeMaterial, Material dormantMaterial, Material secondaryAccent, Color lightColor)
+        {
+            portalRoot.localPosition = localPosition;
+            Vector3 toSphere = PortalNightsMath.Flat(new Vector3(0f, localPosition.y, 8f) - localPosition);
+            portalRoot.localRotation = toSphere.sqrMagnitude <= 0.001f ? Quaternion.identity : Quaternion.LookRotation(toSphere.normalized, Vector3.up);
+            CreatePrimitive(side + "_PortalPlatform_16", PrimitiveType.Cylinder, portalRoot, new Vector3(0f, -2.42f, 0f), new Vector3(16f, 0.24f, 16f), planet2SecondaryMetal, false);
+            CreatePrimitive(side + "_PortalPlatform_GlowRing", PrimitiveType.Cylinder, portalRoot, new Vector3(0f, -2.22f, 0f), new Vector3(13.6f, 0.075f, 13.6f), secondaryAccent, false);
+            CreatePrimitive(side + "_PortalSurface_Active", PrimitiveType.Sphere, portalRoot, Vector3.zero, new Vector3(8.4f, 8.4f, 0.34f), activeMaterial, false);
+            GameObject dormantSurface = CreatePrimitive(side + "_PortalSurface_DormantSupport", PrimitiveType.Sphere, portalRoot, new Vector3(0f, 0f, -0.18f), new Vector3(8.6f, 8.6f, 0.16f), dormantMaterial, false);
+            dormantSurface.SetActive(false);
+
+            for (int i = 0; i < 28; i++)
+            {
+                float angle = i * Mathf.PI * 2f / 28f;
+                Vector3 position = new Vector3(Mathf.Cos(angle) * 5.25f, Mathf.Sin(angle) * 5.25f, -0.34f);
+                GameObject segment = CreatePrimitive(side + "_PortalRing_Segment_" + i.ToString("00"), PrimitiveType.Cube, portalRoot, position, new Vector3(0.58f, 0.88f, 0.72f), i % 4 == 0 ? secondaryAccent : planet2SecondaryMetal, false);
+                segment.transform.localRotation = Quaternion.Euler(0f, 0f, angle * Mathf.Rad2Deg);
+            }
+
+            CreatePrimitive(side + "_Portal_LeftPylon", PrimitiveType.Cube, portalRoot, new Vector3(-6.4f, 0.7f, -0.52f), new Vector3(1.05f, 10.8f, 1.35f), planet2SecondaryMetal, true);
+            CreatePrimitive(side + "_Portal_RightPylon", PrimitiveType.Cube, portalRoot, new Vector3(6.4f, 0.7f, -0.52f), new Vector3(1.05f, 10.8f, 1.35f), planet2SecondaryMetal, true);
+            CreatePrimitive(side + "_Portal_TopCap", PrimitiveType.Cube, portalRoot, new Vector3(0f, 6.2f, -0.52f), new Vector3(12f, 1.05f, 1.35f), planet2SecondaryMetal, true);
+            CreatePrimitive(side + "_Portal_Beacon_27m", PrimitiveType.Cylinder, portalRoot, new Vector3(0f, 13.5f, -0.2f), new Vector3(0.55f, 13.5f, 0.55f), activeMaterial, false);
+
+            Transform marker = CreateChild(portalRoot, "WorldSpaceMarker");
+            marker.localPosition = Vector3.zero;
+            CreatePrimitive("Marker_GlowPin", PrimitiveType.Sphere, marker, new Vector3(0f, 6.8f, -0.1f), new Vector3(0.85f, 0.85f, 0.85f), secondaryAccent, false);
+
+            Transform spawns = CreateChild(portalRoot, "SpawnPoints");
+            for (int i = 0; i < 2; i++)
+            {
+                Transform spawn = CreateChild(spawns, side + "_PortalSpawn_" + (i + 1).ToString("00"));
+                spawn.localPosition = new Vector3(i == 0 ? -1.8f : 1.8f, -2.15f, -3.5f);
+            }
+
+            Light portalLight = portalRoot.gameObject.AddComponent<Light>();
+            portalLight.type = LightType.Point;
+            portalLight.color = lightColor;
+            portalLight.range = 32f;
+            portalLight.intensity = 8.5f;
+
+            ParticleSystem particles = portalRoot.gameObject.AddComponent<ParticleSystem>();
+            ParticleSystem.MainModule main = particles.main;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(0.8f, 1.6f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(0.25f, 0.75f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.16f, 0.42f);
+            main.startColor = lightColor;
+            ParticleSystem.EmissionModule emission = particles.emission;
+            emission.rateOverTime = 42f;
+            ParticleSystem.ShapeModule shape = particles.shape;
+            shape.shapeType = ParticleSystemShapeType.Circle;
+            shape.radius = 4.1f;
+            ParticleSystemRenderer renderer = particles.GetComponent<ParticleSystemRenderer>();
+            renderer.sharedMaterial = activeMaterial;
+        }
+
+        private static void CreatePlanet2EnemySpawnMarkers(Transform root)
+        {
+            Transform spawnRoot = CreateChild(root, "EnemySpawnPoints");
+            Vector3[] spawnPositions =
+            {
+                new Vector3(-42f, 0.35f, 30f),
+                new Vector3(-37.5f, 0.35f, 32f),
+                new Vector3(42f, 0.35f, 30f),
+                new Vector3(37.5f, 0.35f, 32f)
+            };
+            string[] names =
+            {
+                "LeftPortal_Spawn_A",
+                "LeftPortal_Spawn_B",
+                "RightPortal_Spawn_A",
+                "RightPortal_Spawn_B"
+            };
+
+            for (int i = 0; i < spawnPositions.Length; i++)
+            {
+                Transform spawn = CreateChild(spawnRoot, names[i]);
+                spawn.localPosition = spawnPositions[i];
+                CreatePrimitive("SpawnMarker_Glow", PrimitiveType.Cylinder, spawn, Vector3.zero, new Vector3(0.95f, 0.05f, 0.95f), i < 2 ? planet2VioletCrystal : planet2RightPortal, false);
+            }
+        }
+
+        private static void CreatePlanet2Crystals(Transform crystals)
+        {
+            Vector3[] anchors =
+            {
+                new Vector3(-48f, 0.25f, -35f),
+                new Vector3(48f, 0.25f, -35f),
+                new Vector3(-50f, 0.25f, 10f),
+                new Vector3(50f, 0.25f, 10f),
+                new Vector3(-30f, 0.25f, 39f),
+                new Vector3(30f, 0.25f, 39f),
+                new Vector3(-8f, 0.25f, -31f),
+                new Vector3(8f, 0.25f, -31f)
+            };
+
+            for (int i = 0; i < anchors.Length; i++)
+            {
+                CreateCrystalCluster(crystals, "CrystalCluster_" + i.ToString("00"), anchors[i], i % 2 == 0 ? planet2CyanCrystal : planet2VioletCrystal);
+            }
+        }
+
+        private static void CreateCrystalCluster(Transform parent, string name, Vector3 anchor, Material material)
+        {
+            Transform cluster = CreateChild(parent, name);
+            cluster.localPosition = anchor;
+            for (int i = 0; i < 4; i++)
+            {
+                float angle = i * 88f + 14f;
+                Vector3 position = new Vector3(Mathf.Cos(angle * Mathf.Deg2Rad) * (0.45f + i * 0.16f), 0.85f + i * 0.18f, Mathf.Sin(angle * Mathf.Deg2Rad) * (0.45f + i * 0.16f));
+                GameObject crystal = CreatePrimitive("CrystalShard_" + i, PrimitiveType.Cylinder, cluster, position, new Vector3(0.42f, 1.1f + i * 0.32f, 0.42f), material, false);
+                crystal.transform.localRotation = Quaternion.Euler(8f + i * 3f, angle, 11f - i * 2f);
+            }
+        }
+
+        private static void CreatePlanet2RewardMarkers(Transform parent)
+        {
+            CreatePrimitive("FutureRewardPoint_Left", PrimitiveType.Cylinder, parent, new Vector3(-6.5f, 0.2f, -10f), new Vector3(2.2f, 0.1f, 2.2f), planet2ColdWhite, false);
+            CreatePrimitive("FutureRewardPoint_Right", PrimitiveType.Cylinder, parent, new Vector3(6.5f, 0.2f, -10f), new Vector3(2.2f, 0.1f, 2.2f), planet2ColdWhite, false);
+        }
+
+        private static void CreatePlanet2Lighting(Transform root)
+        {
+            GameObject fill = new GameObject("CrystalMoon_ReadabilityFill");
+            fill.transform.SetParent(root, false);
+            fill.transform.localPosition = new Vector3(0f, 16f, -12f);
+            Light fillLight = fill.AddComponent<Light>();
+            fillLight.type = LightType.Point;
+            fillLight.color = new Color(0.35f, 0.55f, 0.75f);
+            fillLight.range = 85f;
+            fillLight.intensity = 1.2f;
+
+            GameObject mistObject = new GameObject("CrystalMoon_SubtleLocalMist");
+            mistObject.transform.SetParent(root, false);
+            mistObject.transform.localPosition = new Vector3(0f, 0.4f, -1f);
+            ParticleSystem mist = mistObject.AddComponent<ParticleSystem>();
+            ParticleSystem.MainModule main = mist.main;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(6f, 10f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(0.08f, 0.18f);
+            main.startSize = new ParticleSystem.MinMaxCurve(1.8f, 4.4f);
+            main.startColor = new Color(0.3f, 0.78f, 1f, 0.08f);
+            ParticleSystem.EmissionModule emission = mist.emission;
+            emission.rateOverTime = 10f;
+            ParticleSystem.ShapeModule shape = mist.shape;
+            shape.shapeType = ParticleSystemShapeType.Box;
+            shape.scale = new Vector3(104f, 1f, 84f);
+            ParticleSystemRenderer renderer = mist.GetComponent<ParticleSystemRenderer>();
+            renderer.sharedMaterial = planet2GlassCyan;
+        }
+
+        private static void UpdatePlanet2ControllerDefaults(Transform planet2Root)
+        {
+            PortalNightsGameController controller = Object.FindFirstObjectByType<PortalNightsGameController>();
+            if (controller == null)
+            {
+                return;
+            }
+
+            SerializedObject serializedController = new SerializedObject(controller);
+            SetSerializedVector3(serializedController, "planet2Center", planet2Root.position);
+            SetSerializedFloat(serializedController, "planet2Radius", 76f);
+            serializedController.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(controller);
+        }
+
+        private static void SetSerializedVector3(SerializedObject serializedObject, string fieldName, Vector3 value)
+        {
+            SerializedProperty property = serializedObject.FindProperty(fieldName);
+            if (property != null)
+            {
+                property.vector3Value = value;
+            }
+        }
+
+        private static void SetSerializedFloat(SerializedObject serializedObject, string fieldName, float value)
+        {
+            SerializedProperty property = serializedObject.FindProperty(fieldName);
+            if (property != null)
+            {
+                property.floatValue = value;
+            }
         }
 
         private static Transform CreateArena(out PortalNightsLanePath leftLanePath, out PortalNightsLanePath rightLanePath)

@@ -85,6 +85,13 @@ namespace PortalNights
         {
             fireTimer -= Time.deltaTime;
             PortalNightsGameController controller = PortalNightsGameController.Instance;
+            PortalNightsDamageTarget damageTarget = controller == null ? null : controller.GetClosestDamageTarget(transform.position, range);
+            if (damageTarget != null && damageTarget.Health != null && !damageTarget.Health.IsDead)
+            {
+                UpdateServerCombatTarget(controller, damageTarget);
+                return;
+            }
+
             PortalNightsEnemy target = controller == null ? null : controller.GetClosestEnemy(transform.position, range);
             if (target == null || target.Health == null || target.Health.IsDead)
             {
@@ -114,6 +121,37 @@ namespace PortalNights
             AimVisual(lastAimDirection, true);
             float damageMultiplier = PortalNightsGameController.Instance == null ? 1f : PortalNightsGameController.Instance.TurretDamageMultiplier;
             target.Health.DamageServer(damage * damageMultiplier);
+            int muzzleCount = GetActiveMuzzleOrigins(out Vector3 originA, out Vector3 originB, out Vector3 originC);
+            FireClientRpc(originA, originB, originC, muzzleCount, targetPoint, Level);
+        }
+
+        private void UpdateServerCombatTarget(PortalNightsGameController controller, PortalNightsDamageTarget target)
+        {
+            Vector3 targetPoint = target.AimPoint;
+            if (PortalNightsMath.TryFlatDirection(transform.position, targetPoint, out Vector3 direction))
+            {
+                lastAimDirection = direction;
+                AimVisual(direction, false);
+            }
+
+            if (fireTimer > 0f)
+            {
+                return;
+            }
+
+            Transform head = rotatingHead == null ? transform : rotatingHead;
+            float angleToTarget = Vector3.Angle(GetBarrelForward(head), lastAimDirection);
+            if (angleToTarget > fireConeDegrees)
+            {
+                return;
+            }
+
+            fireTimer = fireRate;
+            AimVisual(lastAimDirection, true);
+            float damageMultiplier = controller == null ? 1f : controller.TurretDamageMultiplier;
+            float finalDamage = damage * damageMultiplier;
+            target.Health.DamageServer(finalDamage);
+            controller?.NotifyDamageTargetHitServer(target, finalDamage, false);
             int muzzleCount = GetActiveMuzzleOrigins(out Vector3 originA, out Vector3 originB, out Vector3 originC);
             FireClientRpc(originA, originB, originC, muzzleCount, targetPoint, Level);
         }

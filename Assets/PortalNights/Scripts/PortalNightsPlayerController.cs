@@ -204,29 +204,30 @@ namespace PortalNights
             bool fire = mouse != null && mouse.leftButton.isPressed;
             fire |= keyboard.spaceKey.isPressed;
             bool interact = keyboard.eKey.wasPressedThisFrame;
+            bool interactHeld = keyboard.eKey.isPressed;
             bool sprint = keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed;
 
             if (IsServer)
             {
-                ProcessInputServer(moveInput, cameraYaw, aimPoint, fire, interact, sprint);
+                ProcessInputServer(moveInput, cameraYaw, aimPoint, fire, interact, interactHeld, sprint);
             }
             else if (IsSpawned)
             {
-                SubmitInputServerRpc(moveInput, cameraYaw, aimPoint, fire, interact, sprint);
+                SubmitInputServerRpc(moveInput, cameraYaw, aimPoint, fire, interact, interactHeld, sprint);
             }
             else
             {
-                ProcessInputLocal(moveInput, cameraYaw, aimPoint, fire, interact, sprint);
+                ProcessInputLocal(moveInput, cameraYaw, aimPoint, fire, interact, interactHeld, sprint);
             }
         }
 
         [ServerRpc(RequireOwnership = false)]
-        private void SubmitInputServerRpc(Vector2 moveInput, float yaw, Vector3 aimPoint, bool fire, bool interact, bool sprint)
+        private void SubmitInputServerRpc(Vector2 moveInput, float yaw, Vector3 aimPoint, bool fire, bool interact, bool interactHeld, bool sprint)
         {
-            ProcessInputServer(moveInput, yaw, aimPoint, fire, interact, sprint);
+            ProcessInputServer(moveInput, yaw, aimPoint, fire, interact, interactHeld, sprint);
         }
 
-        private void ProcessInputServer(Vector2 moveInput, float yaw, Vector3 aimPoint, bool fire, bool interact, bool sprint)
+        private void ProcessInputServer(Vector2 moveInput, float yaw, Vector3 aimPoint, bool fire, bool interact, bool interactHeld, bool sprint)
         {
             if (!IsServer || health == null || health.IsDead)
             {
@@ -248,13 +249,25 @@ namespace PortalNights
                 controller.TryInteractNearServer(transform.position, OwnerClientId);
             }
 
+            if (controller != null && !controller.GameOver)
+            {
+                if (interactHeld)
+                {
+                    controller.UpdateHeldInteractServer(transform.position, OwnerClientId, Time.deltaTime);
+                }
+                else
+                {
+                    controller.CancelHeldInteractServer(OwnerClientId);
+                }
+            }
+
             if (fire && (controller == null || !controller.GameOver))
             {
                 TryShootServer(aimPoint);
             }
         }
 
-        private void ProcessInputLocal(Vector2 moveInput, float yaw, Vector3 aimPoint, bool fire, bool interact, bool sprint)
+        private void ProcessInputLocal(Vector2 moveInput, float yaw, Vector3 aimPoint, bool fire, bool interact, bool interactHeld, bool sprint)
         {
             cameraYaw = yaw;
             Vector3 moveDirection = ApplyDirectMovement(moveInput, yaw, sprint);
@@ -322,9 +335,18 @@ namespace PortalNights
             lastFinalShootDirection = direction;
 
             PortalNightsGameController controller = PortalNightsGameController.Instance;
-            PortalNightsEnemy target = controller == null ? null : controller.GetShotTarget(origin, direction, effectiveShootRange, 3.15f);
+            PortalNightsDamageTarget damageTarget = controller == null ? null : controller.GetShotDamageTarget(origin, direction, effectiveShootRange, 3.15f);
+            PortalNightsEnemy target = damageTarget == null && controller != null ? controller.GetShotTarget(origin, direction, effectiveShootRange, 3.15f) : null;
             Vector3 hitPoint = origin + direction * effectiveShootRange;
-            if (target != null)
+            if (damageTarget != null && damageTarget.Health != null)
+            {
+                hitPoint = damageTarget.AimPoint;
+                float finalDamage = damage * WeaponDamageMultiplier;
+                damageTarget.Health.DamageServer(finalDamage);
+                controller?.NotifyDamageTargetHitServer(damageTarget, finalDamage, true);
+                PortalNightsVfx.SpawnFloatingText(hitPoint + Vector3.up * 0.5f, Mathf.CeilToInt(finalDamage).ToString(), new Color(0.58f, 0.92f, 1f, 1f));
+            }
+            else if (target != null)
             {
                 hitPoint = target.AimPoint;
                 float finalDamage = damage * WeaponDamageMultiplier;
@@ -334,12 +356,12 @@ namespace PortalNights
 
             if (IsSpawned)
             {
-                ShotVfxClientRpc(origin, hitPoint, target != null);
+                ShotVfxClientRpc(origin, hitPoint, target != null || damageTarget != null);
             }
             else
             {
                 TriggerShootAnimation();
-                PlayShotVfx(origin, hitPoint, target != null);
+                PlayShotVfx(origin, hitPoint, target != null || damageTarget != null);
             }
         }
 
@@ -407,6 +429,17 @@ namespace PortalNights
             armorBoostTimer = 0f;
             weaponDamageBoostTimer = 0f;
             runWeaponDamageMultiplier = 1f;
+        }
+
+        public void ResetTemporaryBoostsServer()
+        {
+            if (!IsServer)
+            {
+                return;
+            }
+
+            armorBoostTimer = 0f;
+            weaponDamageBoostTimer = 0f;
         }
 
         public void ApplyArmorBoostServer(float duration)

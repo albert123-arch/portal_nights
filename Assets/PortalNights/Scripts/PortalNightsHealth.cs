@@ -144,6 +144,26 @@ namespace PortalNights
             HealthChanged?.Invoke(this);
         }
 
+        public void ServerSetCurrentHealth(float value)
+        {
+            if (!PortalNightsNet.ServerCanWrite(this))
+            {
+                return;
+            }
+
+            if (UseLocalRuntimeHealth)
+            {
+                localCurrentHealth = Mathf.Clamp(value, 0f, localMaxHealth);
+                deathRaised = localCurrentHealth <= 0f;
+                HealthChanged?.Invoke(this);
+                return;
+            }
+
+            currentHealth.Value = Mathf.Clamp(value, 0f, maxHealth.Value);
+            deathRaised = currentHealth.Value <= 0f;
+            HealthChanged?.Invoke(this);
+        }
+
         [ClientRpc]
         private void NotifyDiedClientRpc()
         {

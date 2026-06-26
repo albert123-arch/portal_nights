@@ -10,6 +10,27 @@ namespace PortalNights
         Brute
     }
 
+    public enum PortalNightsPlanet4EnemyVariant
+    {
+        Swarmer = 0,
+        Runner = 1,
+        Brute = 2
+    }
+
+    public enum PortalNightsDamageTargetKind
+    {
+        Generic = 0,
+        Planet5HealingSphere = 1,
+        Planet5Boss = 2
+    }
+
+    public enum PortalNightsSphereVisualState
+    {
+        Corrupted = 0,
+        DamagedCore = 1,
+        Restored = 2
+    }
+
     public enum PortalNightsLane
     {
         Left = 0,
@@ -26,7 +47,53 @@ namespace PortalNights
         Planet2_SphereReady = 5,
         Planet2_DefendSphere = 6,
         Planet2_Cleared = 7,
-        Failed = 8
+        Failed = 8,
+        Planet3_Arrival = 9,
+        Planet3_FindStaff = 10,
+        Planet3_ReleaseStaff = 11,
+        Planet3_EscortToSphere = 12,
+        Planet3_SphereReady = 13,
+        Planet3_SphereActivation = 14,
+        Planet3_DefensePreparation = 15,
+        Planet3_DefendSphere = 16,
+        Planet3_Cleared = 17,
+        Planet3_Failed = 18,
+        Planet4_Arrival = 19,
+        Planet4_HordeActive = 20,
+        Planet4_RiftClosing = 21,
+        Planet4_ExitPortalReady = 22,
+        Planet4_Cleared = 23,
+        Planet4_Failed = 24,
+        Planet5_Arrival = 25,
+        Planet5_BossIntro = 26,
+        Planet5_DestroyHealingSphere = 27,
+        Planet5_KillBosses = 28,
+        Planet5_RestoreSphereReady = 29,
+        Planet5_Failed = 30,
+        Planet5_RestoringSphere = 31,
+        Planet5_SphereRestored = 32,
+        Planet5_UniverseComplete = 33
+    }
+
+    public enum PortalNightsStaffState
+    {
+        Captured = 0,
+        Releasing = 1,
+        Following = 2,
+        WaitingAtSphere = 3,
+        Downed = 4,
+        Safe = 5
+    }
+
+    public enum PortalNightsRiftState
+    {
+        Dormant = 0,
+        Charging = 1,
+        Active = 2,
+        Closing = 3,
+        Weakening = 4,
+        Closable = 5,
+        Closed = 6
     }
 
     public enum PortalNightsPickupKind
