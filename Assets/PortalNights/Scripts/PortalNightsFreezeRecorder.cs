@@ -11,12 +11,14 @@ namespace PortalNights
         [SerializeField] private float warningThresholdMs = 50f;
         [SerializeField] private float freezeThresholdMs = 100f;
         [SerializeField] private float debugReportInterval = 5f;
+        [SerializeField] private bool deepDiagnostics;
 
         private Transform planet2Root;
         private Transform planet3Root;
         private Transform planet4Root;
         private Transform planet5Root;
         private float nextDebugReportTime;
+        private float nextDeepDiagnosticTime;
         private float nextRateSampleTime;
         private float sampleWindowStart;
         private int hudWritesPerSecond;
@@ -95,12 +97,24 @@ namespace PortalNights
 
         private void LogReport(string kind, float frameMs, PortalNightsGameController controller)
         {
-            CachePlanetRoots();
+            bool useDeepDiagnostics = deepDiagnostics && Time.unscaledTime >= nextDeepDiagnosticTime;
+            if (useDeepDiagnostics)
+            {
+                nextDeepDiagnosticTime = Time.unscaledTime + 5f;
+                CachePlanetRoots();
+            }
 
             int gc0 = GC.CollectionCount(0);
             int gc1 = GC.CollectionCount(1);
             int gc2 = GC.CollectionCount(2);
             long managedMb = GC.GetTotalMemory(false) / (1024L * 1024L);
+            int enemies = useDeepDiagnostics ? CountActive<PortalNightsEnemy>() : controller == null ? -1 : controller.EnemiesAlive;
+            int allies = useDeepDiagnostics ? CountActive<PortalNightsAlly>() : -1;
+            int pickups = useDeepDiagnostics ? CountActive<PortalNightsPickup>() : -1;
+            int projectiles = useDeepDiagnostics ? CountActive<PortalNightsProjectile>() : -1;
+            int particles = useDeepDiagnostics ? CountActiveParticleSystems() : -1;
+            int lights = useDeepDiagnostics ? CountActiveLights() : -1;
+            int renderers = useDeepDiagnostics ? CountActiveRenderers() : -1;
 
             StringBuilder builder = new StringBuilder(420);
             builder.Append("[PortalNightsFreeze] ");
@@ -112,23 +126,23 @@ namespace PortalNights
             builder.Append(" planet=");
             builder.Append(controller == null ? 0 : controller.ActivePlanetEnvironmentIndex);
             builder.Append(" enemies=");
-            builder.Append(CountActive<PortalNightsEnemy>());
+            builder.Append(FormatOptionalCount(enemies));
             builder.Append(" allies=");
-            builder.Append(CountActive<PortalNightsAlly>());
+            builder.Append(FormatOptionalCount(allies));
             builder.Append(" pickups=");
-            builder.Append(CountActive<PortalNightsPickup>());
+            builder.Append(FormatOptionalCount(pickups));
             builder.Append(" projectiles=");
-            builder.Append(CountActive<PortalNightsProjectile>());
+            builder.Append(FormatOptionalCount(projectiles));
             builder.Append(" bursts=");
             builder.Append(PortalNightsVfx.ActiveBurstCount);
             builder.Append(" floating=");
             builder.Append(PortalNightsVfx.ActiveFloatingTextCount);
             builder.Append(" particles=");
-            builder.Append(CountActiveParticleSystems());
+            builder.Append(FormatOptionalCount(particles));
             builder.Append(" lights=");
-            builder.Append(CountActiveLights());
+            builder.Append(FormatOptionalCount(lights));
             builder.Append(" renderers=");
-            builder.Append(CountActiveRenderers());
+            builder.Append(FormatOptionalCount(renderers));
             builder.Append(" gc=");
             builder.Append(gc0 - lastGc0);
             builder.Append("/");
@@ -146,13 +160,15 @@ namespace PortalNights
             builder.Append(" turretShots/s=");
             builder.Append(turretShotsPerSecond.ToString("0.0"));
             builder.Append(" roots=P2:");
-            builder.Append(IsRootActive(planet2Root) ? "on" : "off");
+            builder.Append(IsRootActiveForReport(controller, 2, planet2Root) ? "on" : "off");
             builder.Append(" P3:");
-            builder.Append(IsRootActive(planet3Root) ? "on" : "off");
+            builder.Append(IsRootActiveForReport(controller, 3, planet3Root) ? "on" : "off");
             builder.Append(" P4:");
-            builder.Append(IsRootActive(planet4Root) ? "on" : "off");
+            builder.Append(IsRootActiveForReport(controller, 4, planet4Root) ? "on" : "off");
             builder.Append(" P5:");
-            builder.Append(IsRootActive(planet5Root) ? "on" : "off");
+            builder.Append(IsRootActiveForReport(controller, 5, planet5Root) ? "on" : "off");
+            builder.Append(" deep=");
+            builder.Append(useDeepDiagnostics ? "on" : "off");
 
             Debug.Log(builder.ToString(), this);
             lastGc0 = gc0;
@@ -183,6 +199,16 @@ namespace PortalNights
         private static bool IsRootActive(Transform root)
         {
             return root != null && root.gameObject.activeInHierarchy;
+        }
+
+        private static bool IsRootActiveForReport(PortalNightsGameController controller, int planetIndex, Transform root)
+        {
+            return controller != null ? controller.IsPlanetRootActiveForDiagnostics(planetIndex) : IsRootActive(root);
+        }
+
+        private static string FormatOptionalCount(int value)
+        {
+            return value < 0 ? "skip" : value.ToString();
         }
 
         private static int CountActive<T>() where T : Component

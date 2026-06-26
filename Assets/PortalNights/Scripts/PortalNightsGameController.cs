@@ -177,6 +177,7 @@ namespace PortalNights
         private float turretDamageBoostTimer;
         private float turretRunDamageMultiplier = 1f;
         private Transform portalPrompt;
+        private Transform arenaRoot;
         private Transform planet2Root;
         private Transform planet2ArrivalPoint;
         private Transform planet2Sphere;
@@ -243,6 +244,7 @@ namespace PortalNights
         private bool planet5SphereDestroyed;
         private bool planet5UniverseCompleteSubmitted;
         private bool pendingPlanet4RiftCounterRefresh;
+        private bool warnedLazyPlanetNetworkSpawnFailure;
         private int activePlanetEnvironmentIndex = -1;
         private float performanceDebugTimer;
         private float nextPlayerCacheRefreshTime;
@@ -301,12 +303,21 @@ namespace PortalNights
         public bool IsPlanet5BossCombatActive => GameState == PortalNightsGameState.Planet5_DestroyHealingSphere || GameState == PortalNightsGameState.Planet5_KillBosses;
         public bool PerformanceDebugEnabled => performanceDebug;
         public int ActivePlanetEnvironmentIndex => activePlanetEnvironmentIndex;
+        public bool IsPlanetRootActiveForDiagnostics(int planetIndex)
+        {
+            CachePlanetRootReferencesOnly();
+            Transform root = GetPlanetRoot(planetIndex);
+            return root != null && root.gameObject.activeInHierarchy;
+        }
+
         private PortalNightsUniverseScaling CurrentScaling => PortalNightsUniverseScaling.ForUniverse(runState == null ? 1 : runState.universeIndex);
 
         private void Awake()
         {
             Instance = this;
             EnsureFreezeRecorder();
+            CachePlanetRootReferencesOnly();
+            DisableFuturePlanetRootsBeforeNetworkStart();
             CacheSceneReferences();
         }
 
@@ -318,12 +329,51 @@ namespace PortalNights
             }
         }
 
+        private void CachePlanetRootReferencesOnly()
+        {
+            if (arenaRoot == null)
+            {
+                GameObject arenaObject = GameObject.Find("PortalNightsArena");
+                arenaRoot = arenaObject == null ? null : arenaObject.transform;
+            }
+
+            if (arenaRoot == null)
+            {
+                return;
+            }
+
+            planet2Root ??= arenaRoot.Find("Planet2_CrystalMoon");
+            planet3Root ??= arenaRoot.Find("Planet3_AshRelayStation");
+            planet4Root ??= arenaRoot.Find("Planet4_SwarmExpanse");
+            planet5Root ??= arenaRoot.Find("Planet5_CrimsonSingularity");
+        }
+
+        private void DisableFuturePlanetRootsBeforeNetworkStart()
+        {
+            CachePlanetRootReferencesOnly();
+            if (GetPlanetIndexForState(GameState) != 1)
+            {
+                return;
+            }
+
+            SetRootActiveFast(planet2Root, false);
+            SetRootActiveFast(planet3Root, false);
+            SetRootActiveFast(planet4Root, false);
+            SetRootActiveFast(planet5Root, false);
+        }
+
+        private static void SetRootActiveFast(Transform root, bool active)
+        {
+            if (root != null && root.gameObject.activeSelf != active)
+            {
+                root.gameObject.SetActive(active);
+            }
+        }
+
         private void Start()
         {
-            EnsurePlanet2Area();
-            EnsurePlanet3Area();
-            EnsurePlanet4Area();
-            EnsurePlanet5Area();
+            CachePlanetRootReferencesOnly();
+            DisableFuturePlanetRootsBeforeNetworkStart();
             SetActivePlanetEnvironment(GetPlanetIndexForState(GameState));
             MakeDefenseObjectsPlayerFriendly();
             hud?.Bind(this);
@@ -366,11 +416,9 @@ namespace PortalNights
 
         public override void OnNetworkSpawn()
         {
+            CachePlanetRootReferencesOnly();
+            DisableFuturePlanetRootsBeforeNetworkStart();
             CacheSceneReferences();
-            EnsurePlanet2Area();
-            EnsurePlanet3Area();
-            EnsurePlanet4Area();
-            EnsurePlanet5Area();
             SetActivePlanetEnvironment(GetPlanetIndexForState(GameState));
             if (IsServer)
             {
@@ -1586,10 +1634,8 @@ namespace PortalNights
         private void InitializeServerState()
         {
             initialized = true;
-            EnsurePlanet2Area();
-            EnsurePlanet3Area();
-            EnsurePlanet4Area();
-            EnsurePlanet5Area();
+            CachePlanetRootReferencesOnly();
+            SetActivePlanetEnvironment(1);
             if (runState == null)
             {
                 runState = new PortalNightsRunState();
@@ -2242,6 +2288,7 @@ namespace PortalNights
 
             BeginPlanetTransitionClientRpc(1, 2);
             SetGameState(PortalNightsGameState.PortalTravel);
+            PreparePlanetForEntry(2);
             ClearRuntimeEnemiesServer();
             waveRunning.Value = false;
             nextWaveTimer.Value = 0f;
@@ -2257,8 +2304,7 @@ namespace PortalNights
                 return;
             }
 
-            EnsurePlanet2Area();
-            SetActivePlanetEnvironment(2);
+            PreparePlanetForEntry(2);
             if (planet2SphereHealth != null)
             {
                 planet2SphereHealth.gameObject.SetActive(true);
@@ -2331,7 +2377,7 @@ namespace PortalNights
             SetGameState(PortalNightsGameState.Planet2_Cleared);
             BroadcastToastClientRpc("PLANET CLEARED - ASH RELAY STATION ONLINE");
             BeginPlanetTransitionClientRpc(2, 3);
-            SetActivePlanetEnvironment(3);
+            PreparePlanetForEntry(3);
             StartPlanet3ArrivalServer();
             CompletePlanetTransitionClientRpc(3);
         }
@@ -2460,7 +2506,6 @@ namespace PortalNights
 
         private void TeleportPlayersToPlanet2Server()
         {
-            EnsurePlanet2Area();
             PortalNightsPlayerController[] players = FindObjectsByType<PortalNightsPlayerController>(FindObjectsSortMode.None);
             for (int i = 0; i < players.Length; i++)
             {
@@ -2645,8 +2690,8 @@ namespace PortalNights
 
         private void EnsurePlanet4Area()
         {
-            Transform arenaRoot = GameObject.Find("PortalNightsArena")?.transform;
-            planet4Root = arenaRoot == null ? null : arenaRoot.Find("Planet4_SwarmExpanse");
+            CachePlanetRootReferencesOnly();
+            planet4Root ??= arenaRoot == null ? null : arenaRoot.Find("Planet4_SwarmExpanse");
             if (planet4Root == null)
             {
                 return;
@@ -2684,8 +2729,7 @@ namespace PortalNights
                 return;
             }
 
-            EnsurePlanet4Area();
-            SetActivePlanetEnvironment(4);
+            PreparePlanetForEntry(4);
             if (planet4Root == null || planet4Rifts.Count == 0)
             {
                 Debug.LogWarning("[PortalNights] Planet 4 map missing. Build Planet4_SwarmExpanse before starting the horde.", this);
@@ -2718,7 +2762,6 @@ namespace PortalNights
             planet4SpawnSerial = 0;
             CancelPlanet4RiftHold();
 
-            EnsurePlanet4Area();
             if (resetRifts)
             {
                 for (int i = 0; i < planet4Rifts.Count; i++)
@@ -2739,7 +2782,6 @@ namespace PortalNights
 
         private void TeleportPlayersToPlanet4Server()
         {
-            EnsurePlanet4Area();
             PortalNightsPlayerController[] players = FindObjectsByType<PortalNightsPlayerController>(FindObjectsSortMode.None);
             for (int i = 0; i < players.Length; i++)
             {
@@ -2759,7 +2801,6 @@ namespace PortalNights
 
         private void UpdatePlanet4Server()
         {
-            EnsurePlanet4Area();
             if (planet4Root == null)
             {
                 return;
@@ -3206,8 +3247,7 @@ namespace PortalNights
                 return;
             }
 
-            Transform arenaRoot = GameObject.Find("PortalNightsArena")?.transform;
-            Transform planet5Root = arenaRoot == null ? null : arenaRoot.Find("Planet5_CrimsonSingularity");
+            CachePlanetRootReferencesOnly();
             if (planet5Root == null)
             {
                 Debug.LogWarning("[PortalNights] Planet 5 transition requested, but Planet5_CrimsonSingularity is not built yet.", this);
@@ -3216,7 +3256,6 @@ namespace PortalNights
             }
 
             BeginPlanetTransitionClientRpc(4, 5);
-            SetActivePlanetEnvironment(5);
             SetGameState(PortalNightsGameState.Planet4_Cleared);
             StartPlanet5ArrivalServer();
             CompletePlanetTransitionClientRpc(5);
@@ -3224,8 +3263,8 @@ namespace PortalNights
 
         private void EnsurePlanet5Area()
         {
-            Transform arenaRoot = GameObject.Find("PortalNightsArena")?.transform;
-            planet5Root = arenaRoot == null ? null : arenaRoot.Find("Planet5_CrimsonSingularity");
+            CachePlanetRootReferencesOnly();
+            planet5Root ??= arenaRoot == null ? null : arenaRoot.Find("Planet5_CrimsonSingularity");
             if (planet5Root == null)
             {
                 return;
@@ -3298,8 +3337,7 @@ namespace PortalNights
                 return;
             }
 
-            EnsurePlanet5Area();
-            SetActivePlanetEnvironment(5);
+            PreparePlanetForEntry(5);
             if (planet5Root == null || planet5SphereHealth == null)
             {
                 Debug.LogWarning("[PortalNights] Planet 5 map missing. Build Planet5_CrimsonSingularity before starting final boss gameplay.", this);
@@ -3974,6 +4012,11 @@ namespace PortalNights
 
         private Transform CreatePlanet5UniversePortalVisualLocal()
         {
+            if (!IsPlanetEnvironmentActive(5))
+            {
+                return null;
+            }
+
             EnsurePlanet5Area();
             if (planet5Root == null)
             {
@@ -4126,6 +4169,7 @@ namespace PortalNights
 
         private void SetActivePlanetEnvironment(int planetIndex)
         {
+            CachePlanetRootReferencesOnly();
             int clampedPlanet = Mathf.Clamp(planetIndex, 1, 5);
             activePlanetEnvironmentIndex = clampedPlanet;
             SetPlanetRootEnvironment(planet2Root, clampedPlanet == 2);
@@ -4133,6 +4177,84 @@ namespace PortalNights
             SetPlanetRootEnvironment(planet4Root, clampedPlanet == 4);
             SetPlanetRootEnvironment(planet5Root, clampedPlanet == 5);
             HideAllObjectiveMarkers();
+        }
+
+        private bool PreparePlanetForEntry(int planetIndex)
+        {
+            int clampedPlanet = Mathf.Clamp(planetIndex, 1, 5);
+            CachePlanetRootReferencesOnly();
+            SetActivePlanetEnvironment(clampedPlanet);
+
+            switch (clampedPlanet)
+            {
+                case 2:
+                    EnsurePlanet2Area();
+                    SpawnUnspawnedNetworkObjectsForPlanetRoot(planet2Root);
+                    return planet2Root != null;
+                case 3:
+                    EnsurePlanet3Area();
+                    SpawnUnspawnedNetworkObjectsForPlanetRoot(planet3Root);
+                    return planet3Root != null;
+                case 4:
+                    EnsurePlanet4Area();
+                    SpawnUnspawnedNetworkObjectsForPlanetRoot(planet4Root);
+                    return planet4Root != null;
+                case 5:
+                    EnsurePlanet5Area();
+                    SpawnUnspawnedNetworkObjectsForPlanetRoot(planet5Root);
+                    return planet5Root != null;
+                default:
+                    return true;
+            }
+        }
+
+        private Transform GetPlanetRoot(int planetIndex)
+        {
+            switch (planetIndex)
+            {
+                case 2: return planet2Root;
+                case 3: return planet3Root;
+                case 4: return planet4Root;
+                case 5: return planet5Root;
+                default: return null;
+            }
+        }
+
+        private void SpawnUnspawnedNetworkObjectsForPlanetRoot(Transform root)
+        {
+            NetworkManager manager = NetworkManager.Singleton;
+            if (!IsServer || root == null || manager == null || !manager.IsListening)
+            {
+                return;
+            }
+
+            NetworkObject[] networkObjects = root.GetComponentsInChildren<NetworkObject>(true);
+            for (int i = 0; i < networkObjects.Length; i++)
+            {
+                NetworkObject networkObject = networkObjects[i];
+                if (networkObject == null || networkObject.IsSpawned)
+                {
+                    continue;
+                }
+
+                if (networkObject.gameObject.scene.IsValid())
+                {
+                    continue;
+                }
+
+                try
+                {
+                    networkObject.Spawn();
+                }
+                catch (System.Exception exception)
+                {
+                    if (!warnedLazyPlanetNetworkSpawnFailure)
+                    {
+                        warnedLazyPlanetNetworkSpawnFailure = true;
+                        Debug.LogWarning("[PortalNights] Lazy planet NetworkObject spawn failed. The object will stay local until Netcode owns it: " + exception.Message, this);
+                    }
+                }
+            }
         }
 
         private static int GetPlanetIndexForState(PortalNightsGameState state)
@@ -4167,6 +4289,12 @@ namespace PortalNights
                 return;
             }
 
+            if (!active && hardDisableInactivePlanetRoots)
+            {
+                SetRootActiveFast(root, false);
+                return;
+            }
+
             if (active && !root.gameObject.activeSelf)
             {
                 root.gameObject.SetActive(true);
@@ -4179,10 +4307,6 @@ namespace PortalNights
             }
 
             cache.Apply(active);
-            if (!active && hardDisableInactivePlanetRoots && cache.CanHardDisableRoot && root.gameObject.activeSelf)
-            {
-                root.gameObject.SetActive(false);
-            }
         }
 
         private void UpdatePerformanceDebug()
@@ -4281,6 +4405,12 @@ namespace PortalNights
                 && (!planetEnvironmentCaches.TryGetValue(root, out PlanetEnvironmentCache cache) || cache.RenderLoadActive);
         }
 
+        private bool IsPlanetEnvironmentActive(int planetIndex)
+        {
+            Transform root = GetPlanetRoot(planetIndex);
+            return root != null && root.gameObject.activeInHierarchy && activePlanetEnvironmentIndex == planetIndex;
+        }
+
         private static bool ShouldTogglePlanetBehaviour(MonoBehaviour behaviour)
         {
             if (behaviour == null || behaviour is NetworkBehaviour)
@@ -4308,11 +4438,9 @@ namespace PortalNights
             private readonly bool[] behaviourEnabled;
 
             public bool RenderLoadActive { get; private set; }
-            public bool CanHardDisableRoot { get; }
 
             public PlanetEnvironmentCache(Transform root)
             {
-                CanHardDisableRoot = root.GetComponentsInChildren<NetworkObject>(true).Length == 0;
                 renderers = root.GetComponentsInChildren<Renderer>(true);
                 rendererEnabled = new bool[renderers.Length];
                 for (int i = 0; i < renderers.Length; i++)
@@ -4423,8 +4551,8 @@ namespace PortalNights
 
         private void EnsurePlanet3Area()
         {
-            Transform arenaRoot = GameObject.Find("PortalNightsArena")?.transform;
-            planet3Root = arenaRoot == null ? null : arenaRoot.Find("Planet3_AshRelayStation");
+            CachePlanetRootReferencesOnly();
+            planet3Root ??= arenaRoot == null ? null : arenaRoot.Find("Planet3_AshRelayStation");
             if (planet3Root == null)
             {
                 return;
@@ -4466,8 +4594,7 @@ namespace PortalNights
                 return;
             }
 
-            EnsurePlanet3Area();
-            SetActivePlanetEnvironment(3);
+            PreparePlanetForEntry(3);
             if (planet3Root == null || planet3RelayHealth == null)
             {
                 BroadcastToastClientRpc("PLANET 3 MAP MISSING");
@@ -4530,7 +4657,6 @@ namespace PortalNights
 
         private void TeleportPlayersToPlanet3Server()
         {
-            EnsurePlanet3Area();
             PortalNightsPlayerController[] players = FindObjectsByType<PortalNightsPlayerController>(FindObjectsSortMode.None);
             for (int i = 0; i < players.Length; i++)
             {
@@ -4550,7 +4676,6 @@ namespace PortalNights
 
         private void UpdatePlanet3Server()
         {
-            EnsurePlanet3Area();
             if (planet3Root == null)
             {
                 return;
@@ -4919,14 +5044,14 @@ namespace PortalNights
 
             planet2Radius = Mathf.Max(planet2Radius, 42f);
 
-            Transform arenaRoot = GameObject.Find("PortalNightsArena")?.transform;
+            CachePlanetRootReferencesOnly();
             if (arenaRoot == null)
             {
                 GameObject root = new GameObject("PortalNightsArena");
                 arenaRoot = root.transform;
             }
 
-            Transform existing = arenaRoot.Find("Planet2_CrystalMoon");
+            Transform existing = planet2Root != null ? planet2Root : arenaRoot.Find("Planet2_CrystalMoon");
             if (existing != null)
             {
                 planet2Root = existing;
@@ -5279,6 +5404,7 @@ namespace PortalNights
 
         private void CacheSceneReferences()
         {
+            CachePlanetRootReferencesOnly();
             if (coreHealth == null)
             {
                 coreHealth = FindFirstObjectByType<PortalNightsHealth>();
@@ -5312,9 +5438,6 @@ namespace PortalNights
 
             buildPoints.Clear();
             buildPoints.AddRange(FindObjectsByType<PortalNightsBuildPoint>(FindObjectsSortMode.None));
-            EnsurePlanet3Area();
-            EnsurePlanet4Area();
-            EnsurePlanet5Area();
         }
 
         private void MakeDefenseObjectsPlayerFriendly()
@@ -5391,7 +5514,16 @@ namespace PortalNights
         {
             if (System.Enum.TryParse(stateName, out PortalNightsGameState parsedState))
             {
-                SetActivePlanetEnvironment(GetPlanetIndexForState(parsedState));
+                int planetIndex = GetPlanetIndexForState(parsedState);
+                if (planetIndex > 1)
+                {
+                    PreparePlanetForEntry(planetIndex);
+                }
+                else
+                {
+                    SetActivePlanetEnvironment(planetIndex);
+                }
+
                 PortalNightsHud.Instance?.ShowToast(PortalNightsLocalization.StateText(parsedState));
                 return;
             }
@@ -5422,6 +5554,11 @@ namespace PortalNights
         [ClientRpc]
         private void SetPlanet4RiftVisualClientRpc(int riftIndex, int riftState)
         {
+            if (!IsPlanetEnvironmentActive(4))
+            {
+                return;
+            }
+
             EnsurePlanet4Area();
             if (riftIndex < 0 || riftIndex >= planet4Rifts.Count || planet4Rifts[riftIndex] == null)
             {
@@ -5439,6 +5576,11 @@ namespace PortalNights
         [ClientRpc]
         private void SetPlanet4ExitPortalVisualClientRpc(bool active)
         {
+            if (!IsPlanetEnvironmentActive(4))
+            {
+                return;
+            }
+
             EnsurePlanet4Area();
             if (planet4ExitPortal == null)
             {
@@ -5481,6 +5623,11 @@ namespace PortalNights
         [ClientRpc]
         private void SetPlanet5SphereVisualClientRpc(int sphereState)
         {
+            if (!IsPlanetEnvironmentActive(5))
+            {
+                return;
+            }
+
             EnsurePlanet5Area();
             PortalNightsSphereVisualState state = (PortalNightsSphereVisualState)sphereState;
             if (planet5SphereVisual != null)
@@ -5516,6 +5663,11 @@ namespace PortalNights
         [ClientRpc]
         private void SetPlanet5StabilizerVisualClientRpc(int stabilizerIndex, bool available, bool completed)
         {
+            if (!IsPlanetEnvironmentActive(5))
+            {
+                return;
+            }
+
             EnsurePlanet5Area();
             if (stabilizerIndex < 0 || stabilizerIndex >= planet5Stabilizers.Count || planet5Stabilizers[stabilizerIndex] == null)
             {
@@ -5544,6 +5696,11 @@ namespace PortalNights
         [ClientRpc]
         private void SetPlanet5UniversePortalVisualClientRpc(bool active)
         {
+            if (!IsPlanetEnvironmentActive(5))
+            {
+                return;
+            }
+
             EnsurePlanet5Area();
             if (active)
             {
