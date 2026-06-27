@@ -1,0 +1,1 @@
+Assets/PortalNights/Art/**/*.fbx filter=lfs diff=lfs merge=lfs -text
