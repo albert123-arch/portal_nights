@@ -12,6 +12,8 @@ namespace PortalNights
 
     public sealed class PortalNightsObjectiveTracker : MonoBehaviour
     {
+        [SerializeField] private bool showDebugPanelBackgrounds;
+
         private Canvas canvas;
         private CanvasGroup panelGroup;
         private Image accent;
@@ -49,6 +51,8 @@ namespace PortalNights
             panelGroup.alpha = 0f;
             Image background = panelObject.GetComponent<Image>();
             background.color = new Color(0.02f, 0.06f, 0.1f, 0.84f);
+            background.raycastTarget = false;
+            background.enabled = showDebugPanelBackgrounds;
 
             GameObject accentObject = new GameObject("Accent", typeof(RectTransform), typeof(Image));
             accentObject.transform.SetParent(panelObject.transform, false);
@@ -59,6 +63,8 @@ namespace PortalNights
             accentRect.offsetMax = new Vector2(5f, 0f);
             accent = accentObject.GetComponent<Image>();
             accent.color = new Color(0.38f, 0.96f, 1f, 1f);
+            accent.raycastTarget = false;
+            accent.enabled = showDebugPanelBackgrounds;
 
             GameObject iconObject = new GameObject("ObjectiveIcon", typeof(RectTransform), typeof(Image));
             iconObject.transform.SetParent(panelObject.transform, false);
@@ -71,6 +77,8 @@ namespace PortalNights
             iconRect.localRotation = Quaternion.Euler(0f, 0f, 45f);
             statusIcon = iconObject.GetComponent<Image>();
             statusIcon.color = new Color(0.38f, 0.96f, 1f, 0.95f);
+            statusIcon.raycastTarget = false;
+            statusIcon.enabled = showDebugPanelBackgrounds;
 
             objectiveText = CreateText("MainObjective", panelObject.transform, font, 24, FontStyle.Bold, new Color(0.92f, 1f, 1f, 1f));
             RectTransform objectiveRect = objectiveText.rectTransform;

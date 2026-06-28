@@ -1,6 +1,7 @@
 using Unity.Netcode;
 using Unity.Netcode.Components;
 using UnityEngine;
+using PortalNights.Visuals;
 
 namespace PortalNights
 {
@@ -23,18 +24,23 @@ namespace PortalNights
             NetworkVariableWritePermission.Server);
 
         private PortalNightsHealth health;
+        private PortalNightsStaffState localState = PortalNightsStaffState.Captured;
+        private PortalNightsStaffVisualBinder visualBinder;
 
         public string StaffId => staffId;
-        public PortalNightsStaffState State => (PortalNightsStaffState)state.Value;
+        public string DisplayName => PortalNightsLocalization.Text(GetDisplayNameKey(staffId));
+        public PortalNightsStaffState State => UseLocalRuntimeState ? localState : (PortalNightsStaffState)state.Value;
         public PortalNightsHealth Health => health;
         public bool NeedsRelease => State == PortalNightsStaffState.Captured || State == PortalNightsStaffState.Releasing;
         public bool NeedsRevive => State == PortalNightsStaffState.Downed;
         public bool IsAtSphere => State == PortalNightsStaffState.WaitingAtSphere || State == PortalNightsStaffState.Safe;
         public bool IsRescued => State == PortalNightsStaffState.Following || State == PortalNightsStaffState.WaitingAtSphere || State == PortalNightsStaffState.Safe;
+        private bool UseLocalRuntimeState => Application.isPlaying && !IsSpawned && NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening;
 
         private void Awake()
         {
             health = GetComponent<PortalNightsHealth>();
+            visualBinder = GetComponent<PortalNightsStaffVisualBinder>();
             health.SetBaseMaxHealth(150f);
             MakeNonBlocking();
             RefreshMarker();
@@ -42,6 +48,7 @@ namespace PortalNights
 
         private void OnEnable()
         {
+            EnsureStaffVisual();
             PortalNightsGameController.Instance?.RegisterPlanet3Staff(this);
         }
 
@@ -54,6 +61,7 @@ namespace PortalNights
         {
             state.OnValueChanged += HandleStateChanged;
             health.Died += HandleDied;
+            EnsureStaffVisual();
             RefreshMarker();
         }
 
@@ -65,7 +73,7 @@ namespace PortalNights
 
         private void Update()
         {
-            if (!IsServer || State != PortalNightsStaffState.Following)
+            if (!CanRunServerLogic() || State != PortalNightsStaffState.Following)
             {
                 return;
             }
@@ -116,6 +124,9 @@ namespace PortalNights
             }
 
             transform.SetPositionAndRotation(position, rotation);
+            EnsureStaffVisual();
+            PortalNightsGroundingUtility.GroundGameplayRoot(gameObject, 3);
+            visualBinder?.Reground();
             health.ServerInitialize(150f, true);
             SetStateServer(PortalNightsStaffState.Captured);
         }
@@ -161,13 +172,22 @@ namespace PortalNights
 
         private void SetStateServer(PortalNightsStaffState newState)
         {
-            if (!PortalNightsNet.ServerCanWrite(this))
+            if (!CanRunServerLogic())
             {
+                return;
+            }
+
+            if (UseLocalRuntimeState)
+            {
+                localState = newState;
+                RefreshMarker();
+                RefreshVisualState();
                 return;
             }
 
             state.Value = (int)newState;
             RefreshMarker();
+            RefreshVisualState();
         }
 
         private void HandleDied(PortalNightsHealth deadHealth)
@@ -181,6 +201,7 @@ namespace PortalNights
         private void HandleStateChanged(int previous, int current)
         {
             RefreshMarker();
+            RefreshVisualState();
         }
 
         private void RefreshMarker()
@@ -216,12 +237,49 @@ namespace PortalNights
             }
         }
 
+        private void EnsureStaffVisual()
+        {
+            if (visualBinder == null)
+            {
+                visualBinder = GetComponent<PortalNightsStaffVisualBinder>();
+            }
+
+            if (visualBinder == null)
+            {
+                visualBinder = gameObject.AddComponent<PortalNightsStaffVisualBinder>();
+            }
+
+            visualBinder.BindCh32();
+            RefreshVisualState();
+        }
+
+        private void RefreshVisualState()
+        {
+            visualBinder?.SetStaffState(State);
+        }
+
         private void MakeNonBlocking()
         {
             foreach (Collider collider in GetComponentsInChildren<Collider>())
             {
                 collider.isTrigger = true;
             }
+        }
+
+        private bool CanRunServerLogic()
+        {
+            NetworkManager manager = NetworkManager.Singleton;
+            if (manager == null || !manager.IsListening)
+            {
+                return true;
+            }
+
+            return IsSpawned ? IsServer : manager.IsServer;
+        }
+
+        private static string GetDisplayNameKey(string id)
+        {
+            return !string.IsNullOrWhiteSpace(id) && id.Contains("02") ? "staff.member2" : "staff.member1";
         }
 
         private static Color GetStateColor(PortalNightsStaffState staffState)

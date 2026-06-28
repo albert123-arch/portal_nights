@@ -2,6 +2,7 @@ using System.Collections;
 using UnityEngine;
 using Unity.Netcode;
 using Unity.Netcode.Components;
+using PortalNights.Visuals;
 
 namespace PortalNights
 {
@@ -24,9 +25,17 @@ namespace PortalNights
         private PortalNightsHealth health;
         private readonly NetworkVariable<int> assignedLane = new NetworkVariable<int>(
             (int)PortalNightsLane.Left, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<int> visualKind = new NetworkVariable<int>(
+            (int)PortalNightsEnemyVisualKind.None, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<float> visualTargetHeight = new NetworkVariable<float>(
+            0f, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<int> visualPlanetIndex = new NetworkVariable<int>(
+            1, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         private PortalNightsLanePath lanePath;
+        private PortalNightsEnemyVisualBinder visualBinder;
         private int waypointIndex;
         private float attackTimer;
+        private float lastObservedHealth;
         private bool deathHandled;
 
         public PortalNightsHealth Health => health;
@@ -41,7 +50,11 @@ namespace PortalNights
                     return aimPoint.position;
                 }
 
-                float chestHeight = enemyKind == PortalNightsEnemyKind.Brute ? 1.45f : 0.92f;
+                float visualHeight = GetCurrentVisualTargetHeight();
+                float chestHeight = Mathf.Clamp(
+                    visualHeight * 0.58f,
+                    enemyKind == PortalNightsEnemyKind.Brute ? 1.25f : 0.95f,
+                    enemyKind == PortalNightsEnemyKind.Brute ? 2.25f : 1.55f);
                 return transform.position + Vector3.up * chestHeight;
             }
         }
@@ -49,11 +62,18 @@ namespace PortalNights
         private void Awake()
         {
             health = GetComponent<PortalNightsHealth>();
+            visualBinder = GetComponent<PortalNightsEnemyVisualBinder>();
         }
 
         public override void OnNetworkSpawn()
         {
             health.Died += HandleDeath;
+            health.HealthChanged += HandleHealthChangedVisual;
+            visualKind.OnValueChanged += HandleVisualKindChanged;
+            visualTargetHeight.OnValueChanged += HandleVisualTargetHeightChanged;
+            visualPlanetIndex.OnValueChanged += HandleVisualPlanetIndexChanged;
+            lastObservedHealth = health.CurrentHealth;
+            ApplyVisualLocal((PortalNightsEnemyVisualKind)visualKind.Value);
             if (IsServer)
             {
                 PortalNightsGameController.Instance?.RegisterEnemy(this);
@@ -74,8 +94,12 @@ namespace PortalNights
             if (health != null)
             {
                 health.Died -= HandleDeath;
+                health.HealthChanged -= HandleHealthChangedVisual;
             }
 
+            visualKind.OnValueChanged -= HandleVisualKindChanged;
+            visualTargetHeight.OnValueChanged -= HandleVisualTargetHeightChanged;
+            visualPlanetIndex.OnValueChanged -= HandleVisualPlanetIndexChanged;
             if (IsServer)
             {
                 PortalNightsGameController.Instance?.UnregisterEnemy(this);
@@ -132,6 +156,31 @@ namespace PortalNights
             }
 
             health?.ServerInitialize(baseHealth, true);
+        }
+
+        public void ApplyVisualServer(PortalNightsEnemyVisualKind kind)
+        {
+            ApplyVisualServer(kind, PortalNightsEnemyVisualCatalog.GetTargetHeight(kind, enemyKind));
+        }
+
+        public void ApplyVisualServer(PortalNightsEnemyVisualKind kind, float targetHeight)
+        {
+            ApplyVisualServer(kind, targetHeight, visualPlanetIndex.Value);
+        }
+
+        public void ApplyVisualServer(PortalNightsEnemyVisualKind kind, float targetHeight, int planetIndex)
+        {
+            int resolvedPlanetIndex = Mathf.Max(1, planetIndex);
+            if (IsSpawned && PortalNightsNet.ServerCanWrite(this))
+            {
+                PortalNightsGroundingUtility.GroundGameplayRoot(gameObject, resolvedPlanetIndex);
+                visualTargetHeight.Value = Mathf.Max(0f, targetHeight);
+                visualPlanetIndex.Value = resolvedPlanetIndex;
+                visualKind.Value = (int)kind;
+            }
+
+            ApplyVisualLocal(kind);
+            visualBinder?.RegroundCurrentVisual();
         }
 
         public void ApplyEnhancedServer(float healthMultiplier, float damageMultiplier, float scaleMultiplier)
@@ -259,6 +308,76 @@ namespace PortalNights
             return controller.GetEnemyTargetHealth(transform.position, playerAggroRange);
         }
 
+        private void HandleVisualKindChanged(int previous, int current)
+        {
+            ApplyVisualLocal((PortalNightsEnemyVisualKind)current);
+        }
+
+        private void HandleVisualTargetHeightChanged(float previous, float current)
+        {
+            ApplyVisualLocal((PortalNightsEnemyVisualKind)visualKind.Value);
+        }
+
+        private void HandleVisualPlanetIndexChanged(int previous, int current)
+        {
+            ApplyVisualLocal((PortalNightsEnemyVisualKind)visualKind.Value);
+        }
+
+        private void ApplyVisualLocal(PortalNightsEnemyVisualKind kind)
+        {
+            if (kind == PortalNightsEnemyVisualKind.None)
+            {
+                return;
+            }
+
+            EnsureVisualBinder().Bind(kind, GetCurrentVisualTargetHeight(kind), Mathf.Max(1, visualPlanetIndex.Value));
+        }
+
+        private float GetCurrentVisualTargetHeight(PortalNightsEnemyVisualKind kind = PortalNightsEnemyVisualKind.None)
+        {
+            float syncedHeight = visualTargetHeight.Value;
+            if (syncedHeight > 0.1f)
+            {
+                return syncedHeight;
+            }
+
+            PortalNightsEnemyVisualKind resolvedKind = kind == PortalNightsEnemyVisualKind.None
+                ? (PortalNightsEnemyVisualKind)visualKind.Value
+                : kind;
+            return PortalNightsEnemyVisualCatalog.GetTargetHeight(resolvedKind, enemyKind);
+        }
+
+        private PortalNightsEnemyVisualBinder EnsureVisualBinder()
+        {
+            if (visualBinder == null)
+            {
+                visualBinder = GetComponent<PortalNightsEnemyVisualBinder>();
+            }
+
+            if (visualBinder == null)
+            {
+                visualBinder = gameObject.AddComponent<PortalNightsEnemyVisualBinder>();
+            }
+
+            return visualBinder;
+        }
+
+        private void HandleHealthChangedVisual(PortalNightsHealth changedHealth)
+        {
+            if (changedHealth == null)
+            {
+                return;
+            }
+
+            float current = changedHealth.CurrentHealth;
+            if (current > 0.01f && current < lastObservedHealth - 0.05f)
+            {
+                EnsureVisualBinder().TriggerHit();
+            }
+
+            lastObservedHealth = current;
+        }
+
         private void HandleDeath(PortalNightsHealth deadHealth)
         {
             if (!IsServer || deathHandled)
@@ -289,12 +408,14 @@ namespace PortalNights
         [ClientRpc]
         private void AttackVfxClientRpc(Vector3 hitPosition)
         {
+            EnsureVisualBinder().TriggerAttack();
             PortalNightsVfx.SpawnBurst(hitPosition, new Color(1f, 0.28f, 0.18f, 1f), 0.75f, 13);
         }
 
         [ClientRpc]
         private void DeathVfxClientRpc(Vector3 position, bool brute)
         {
+            EnsureVisualBinder().TriggerDeath();
             PortalNightsVfx.SpawnBurst(position, brute ? new Color(1f, 0.34f, 0.96f, 1f) : new Color(0.64f, 0.22f, 1f, 1f), brute ? 1.55f : 1f, brute ? 32 : 21);
         }
     }

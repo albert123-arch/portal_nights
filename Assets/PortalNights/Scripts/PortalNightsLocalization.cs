@@ -225,17 +225,150 @@ namespace PortalNights
 
         private static readonly Dictionary<string, string> En = new Dictionary<string, string>
         {
+            { "loading.text", "Loading..." },
+
             { "hud.wave", "WAVE" },
             { "hud.enemies", "ENEMIES" },
             { "hud.core", "CORE" },
             { "hud.player", "HERO" },
             { "hud.coins", "COINS" },
+            { "hud.score", "SCORE" },
+            { "hud.time", "TIME" },
+            { "hud.bosses", "BOSSES" },
+            { "hud.staff", "STAFF" },
+            { "hud.spheres", "SPHERES" },
+            { "hud.deaths", "DEATHS" },
+            { "hud.turrets", "TURRETS" },
+            { "hud.upgrades", "UPGRADES" },
+            { "hud.universe", "UNIVERSE" },
+            { "hud.planet", "PLANET" },
             { "hud.buildReady", "E  BUILD TURRET" },
             { "hud.upgradeReady", "E  UPGRADE TURRET  {0}>{1}" },
+            { "hud.upgradeLevelReady", "E  UPGRADE TURRET LVL {0}" },
             { "hud.buildCost", "COST" },
             { "hud.noBuild", "FIND A BUILD PAD" },
+            { "hud.turretMaxLevel", "TURRET MAX LEVEL" },
             { "hud.wait", "NEXT WAVE IN" },
             { "hud.gameOver", "CORE LOST - PRESS R" },
+            { "hud.chooseReward", "CHOOSE REWARD" },
+            { "hud.portalReady", "PORTAL READY" },
+            { "hud.portalLocked", "PORTAL LOCKED" },
+            { "hud.planet2", "PLANET 2 - CRYSTAL MOON" },
+            { "hud.planet3", "PLANET 3 - ASH RELAY STATION" },
+            { "hud.planet4", "PLANET 4 - SWARM EXPANSE" },
+            { "hud.planet5", "PLANET 5 - CRIMSON SINGULARITY" },
+            { "hud.planet4Portal", "PLANET 5 PORTAL OPEN" },
+            { "hud.sphereReady", "SPHERE READY" },
+            { "hud.relaySphereReady", "RELAY SPHERE READY" },
+            { "hud.defendSphere", "DEFEND THE SPHERE" },
+            { "hud.prepareDefense", "PREPARE DEFENSE {0}" },
+            { "hud.relayCharge", "RELAY CHARGE {0}%" },
+            { "hud.planetCleared", "PLANET CLEARED" },
+            { "hud.planet3Cleared", "PLANET 3 CLEARED" },
+            { "hud.planet4Cleared", "PLANET 4 CLEARED" },
+            { "hud.relayDestroyed", "RELAY DESTROYED - PRESS R" },
+            { "hud.swarmOverrun", "SWARM OVERRUN - PRESS R" },
+            { "hud.destroyHealingSphere", "DESTROY THE HEALING SPHERE" },
+            { "hud.killBosses", "HEALING DISABLED - KILL BOSSES" },
+            { "hud.restoreSphere", "RESTORE THE SPHERE" },
+            { "hud.restoringSphere", "RESTORING SPHERE" },
+            { "hud.sphereRestored", "SPHERE RESTORED" },
+            { "hud.crimsonLost", "CRIMSON SINGULARITY LOST - PRESS R" },
+            { "hud.sphereLost", "SPHERE LOST - PRESS R" },
+            { "hud.controls", "WASD MOVE   MOUSE AIM   LMB/SPACE FIRE   SHIFT RUN   E BUILD" },
+            { "hud.restart", "R RESTART   ESC CURSOR" },
+            { "hud.enterPortal", "E ENTER PORTAL" },
+            { "hud.activateSphere", "E ACTIVATE SPHERE" },
+            { "hud.rewardOptions", "1  +15% WEAPON DAMAGE     2  +15% TURRET DAMAGE     3  CORE REPAIR +150" },
+            { "hud.sphereReadyRestore", "SPHERE READY TO RESTORE" },
+            { "hud.universeComplete", "UNIVERSE COMPLETE" },
+            { "hud.finalScore", "FINAL SCORE" },
+            { "hud.localLeaderboard", "LOCAL LEADERBOARD" },
+            { "hud.leaderboardHeader", "#    NAME         SCORE     U   TIME    ENEMIES   BOSSES" },
+            { "hud.noLeaderboard", "NO RECORDS YET" },
+            { "hud.defaultPlayerName", "Commander" },
+            { "hud.runSummary", "RUN SUMMARY" },
+            { "hud.enterNextUniverse", "E AT PORTAL: ENTER UNIVERSE {0}" },
+            { "hud.showHideLeaderboard", "L: LOCAL LEADERBOARD" },
+            { "hud.leaderboardToggle", "L SHOW/HIDE" },
+            { "hud.enemiesKilled", "ENEMIES KILLED" },
+            { "hud.bossesDefeated", "BOSSES DEFEATED" },
+            { "hud.staffSaved", "STAFF SAVED" },
+            { "hud.spheresRestored", "SPHERES RESTORED" },
+            { "hud.turretsBuiltUpgraded", "TURRETS BUILT/UPGRADED" },
+            { "hud.objective", "OBJECTIVE" },
+            { "hud.objectiveRelay", "RELAY SPHERE" },
+            { "hud.objectiveClearArea", "CLEAR AREA" },
+            { "hud.healingSphere", "HEALING SPHERE" },
+            { "hud.enemiesDefeated", "ENEMIES DEFEATED" },
+            { "hud.sphereHp", "SPHERE" },
+            { "hud.bossesCannotDie", "BOSSES CANNOT DIE" },
+            { "hud.stabilizers", "STABILIZERS" },
+            { "hud.universeStabilized", "UNIVERSE STABILIZED" },
+            { "hud.staffRescued", "STAFF RESCUED" },
+            { "hud.staffAtSphere", "STAFF AT SPHERE" },
+            { "hud.charge", "CHARGE" },
+            { "hud.rifts", "RIFTS" },
+            { "hud.riftsClosed", "RIFTS CLOSED" },
+            { "hud.activeRifts", "ACTIVE RIFTS" },
+            { "hud.hold", "HOLD" },
+            { "hud.solar", "SOLAR" },
+            { "hud.behemoth", "BEHEMOTH" },
+            { "hud.allies", "ALLIES" },
+
+            { "objective.defendCore", "DEFEND THE CORE" },
+            { "objective.chooseReward", "CHOOSE REWARD" },
+            { "objective.enterPortal", "ENTER THE PORTAL" },
+            { "objective.clearArea", "CLEAR THE AREA" },
+            { "objective.activateSphere", "ACTIVATE THE SPHERE" },
+            { "objective.defendSphere", "DEFEND THE SPHERE" },
+            { "objective.areaCleared", "AREA CLEARED" },
+            { "objective.rescueStaff", "RESCUE STAFF" },
+            { "objective.closeRifts", "CLOSE RIFTS" },
+            { "objective.destroyCorruptedSphere", "DESTROY THE CORRUPTED SPHERE" },
+            { "objective.killBothBosses", "KILL BOTH BOSSES" },
+            { "objective.restoreSphere", "RESTORE THE SPHERE" },
+            { "objective.universeComplete", "UNIVERSE COMPLETE" },
+            { "objective.failed", "OBJECTIVE FAILED" },
+
+            { "progress.wave", "WAVE {0}/{1}" },
+            { "progress.nextWave", "NEXT WAVE IN {0}" },
+            { "progress.pressRewards", "PRESS 1 / 2 / 3" },
+            { "progress.requiredTurrets", "ALL REQUIRED TURRETS ONLINE" },
+            { "progress.enemies", "ENEMIES: {0}" },
+            { "progress.holdCore", "HOLD POSITION AT THE CORE" },
+            { "progress.nextPlanetOnline", "NEXT PLANET ONLINE" },
+            { "progress.staffAtSphere", "STAFF AT SPHERE: {0}/2" },
+            { "progress.buildTime", "BUILD TIME: {0}" },
+            { "progress.relayCharge", "RELAY CHARGE: {0}%" },
+            { "progress.killsRifts", "KILLS: {0}/{1}   RIFTS: {2}/4" },
+            { "progress.planet5PortalOpen", "PLANET 5 PORTAL OPEN" },
+            { "progress.sphere", "SPHERE: {0}" },
+            { "progress.bossesDefeated", "BOSSES DEFEATED: {0}/2" },
+            { "progress.stabilizers", "STABILIZERS: {0}/{1}" },
+            { "progress.bossesHealing", "BOSSES ARE HEALING" },
+            { "progress.enterNextUniverse", "ENTER THE NEXT UNIVERSE" },
+            { "progress.pressRetry", "PRESS R TO RETRY" },
+
+            { "prompt.enterFinalWorld", "E ENTER FINAL WORLD" },
+            { "prompt.holdCloseRift", "HOLD E TO CLOSE {0}{1}" },
+            { "prompt.holdStabilize", "HOLD E TO STABILIZE {0}{1}" },
+            { "prompt.holdReleaseStaff", "HOLD E TO RELEASE {0}{1}" },
+            { "prompt.holdRevive", "HOLD E TO REVIVE{0}" },
+            { "prompt.holdActivateRelay", "HOLD E TO ACTIVATE RELAY SPHERE{0}" },
+
+            { "marker.activate", "ACTIVATE" },
+            { "marker.relay", "RELAY" },
+            { "marker.corruptedSphere", "CORRUPTED SPHERE" },
+            { "marker.staff", "STAFF" },
+            { "marker.closeRift", "CLOSE RIFT" },
+            { "marker.stabilizer", "STABILIZER" },
+
+            { "transition.universeShift", "UNIVERSE SHIFT" },
+            { "transition.planetTitle", "PLANET {0}" },
+            { "transition.transit", "SIGNAL SHIFTING...\nPORTAL TRANSIT..." },
+            { "transition.planet1Empowered", "PLANET 1 - ENEMIES EMPOWERED" },
+
             { "toast.notEnoughCoins", "Not enough coins" },
             { "toast.turretBuilt", "Turret online" },
             { "toast.turretUpgraded", "Turret upgraded" },
@@ -243,7 +376,65 @@ namespace PortalNights
             { "toast.turretMissing", "Turret prefab missing" },
             { "toast.noPad", "Move closer to a build pad" },
             { "toast.coreLost", "The Core has fallen" },
-            { "toast.waveClear", "Wave cleared" }
+            { "toast.waveClear", "Wave cleared" },
+            { "toast.portalCharging", "Portal charging - both lanes" },
+            { "toast.rewardChoice", "Wave {0} reward - press 1 / 2 / 3" },
+            { "toast.portalReady", "Portal ready" },
+            { "toast.activateSphere", "E activate sphere" },
+            { "toast.universeComplete", "Universe complete" },
+            { "toast.universeEntered", "UNIVERSE {0} - ENEMIES EMPOWERED - PLANET 1" },
+            { "toast.weaponDamageReward", "+15% player weapon damage" },
+            { "toast.turretDamageReward", "+15% turret damage" },
+            { "toast.coreRepairReward", "Core repaired +150" },
+            { "toast.coinGain", "COINS +{0}" },
+            { "toast.heal", "HEAL +40" },
+            { "toast.armor", "ARMOR +30% 30S" },
+            { "toast.weaponDamageBoost", "WEAPON DAMAGE +20% 30S" },
+            { "toast.turretDamageBoost", "TURRET DAMAGE +20% 30S" },
+            { "toast.areaCleared", "Area cleared" },
+            { "toast.sphereActivated", "Sphere activated" },
+            { "toast.bossesDefeated", "Bosses defeated" },
+            { "toast.riftClosed", "Rift closed" },
+            { "toast.sphereRestored", "Sphere restored" },
+            { "toast.bossHeal", "BOSS HEAL" },
+            { "toast.level", "LVL {0}" },
+            { "toast.online", "{0} ONLINE {1}/{2}" },
+            { "toast.multiplier", "HP x{0}  DMG x{1}  SCORE x{2}" },
+            { "toast.system", "SYSTEM" },
+
+            { "state.Planet1_Defense", "Planet 1 - core defense" },
+            { "state.Planet1_RewardChoice", "Choose reward" },
+            { "state.Planet1_PortalReady", "Portal ready" },
+            { "state.PortalTravel", "Portal travel" },
+            { "state.Planet2_ClearArea", "Planet 2 - clear the area" },
+            { "state.Planet2_SphereReady", "Sphere ready" },
+            { "state.Planet2_DefendSphere", "Defend the sphere" },
+            { "state.Planet2_Cleared", "Planet 2 cleared" },
+            { "state.Planet3_FindStaff", "Planet 3 - rescue staff" },
+            { "state.Planet3_ReleaseStaff", "Release staff" },
+            { "state.Planet3_EscortToSphere", "Escort staff to sphere" },
+            { "state.Planet3_SphereReady", "Relay sphere ready" },
+            { "state.Planet3_SphereActivation", "Relay sphere activation" },
+            { "state.Planet3_DefensePreparation", "Prepare relay defense" },
+            { "state.Planet3_DefendSphere", "Defend the relay" },
+            { "state.Planet3_Cleared", "Planet 3 cleared" },
+            { "state.Planet3_Failed", "Relay destroyed" },
+            { "state.Planet4_Arrival", "Planet 4 - Swarm Expanse" },
+            { "state.Planet4_HordeActive", "Close the rifts" },
+            { "state.Planet4_RiftClosing", "Rift closing" },
+            { "state.Planet4_ExitPortalReady", "Planet 5 portal open" },
+            { "state.Planet4_Cleared", "Planet 4 cleared" },
+            { "state.Planet4_Failed", "Swarm overrun" },
+            { "state.Planet5_Arrival", "Planet 5 - Crimson Singularity" },
+            { "state.Planet5_BossIntro", "Bosses awakening" },
+            { "state.Planet5_DestroyHealingSphere", "Destroy healing sphere" },
+            { "state.Planet5_KillBosses", "Kill the bosses" },
+            { "state.Planet5_RestoreSphereReady", "Restore the sphere" },
+            { "state.Planet5_RestoringSphere", "Restoring sphere" },
+            { "state.Planet5_SphereRestored", "Sphere restored" },
+            { "state.Planet5_UniverseComplete", "Universe complete" },
+            { "state.Planet5_Failed", "Objective failed" },
+            { "state.Failed", "Objective failed" }
         };
 
         private static readonly Dictionary<string, string> LegacyRu = new Dictionary<string, string>
@@ -315,8 +506,75 @@ namespace PortalNights
             CurrentLanguage = language;
         }
 
+        public static void SetLanguageFromCode(string code)
+        {
+            CurrentLanguage = MapLanguageCode(code);
+        }
+
+        public static PortalNightsLanguage MapLanguageCode(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                return PortalNightsLanguage.Russian;
+            }
+
+            string normalized = code.Trim().ToLowerInvariant();
+            int separator = normalized.IndexOfAny(new[] { '-', '_' });
+            if (separator > 0)
+            {
+                normalized = normalized.Substring(0, separator);
+            }
+
+            return normalized == "en" ? PortalNightsLanguage.English : PortalNightsLanguage.Russian;
+        }
+
+        private static bool TryGetSupplementalText(string key, out string value)
+        {
+            value = null;
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return false;
+            }
+
+            bool english = CurrentLanguage == PortalNightsLanguage.English;
+            switch (key)
+            {
+                case "staff.member1":
+                    value = english ? "STAFF 1" : "\u041f\u0415\u0420\u0421\u041e\u041d\u0410\u041b 1";
+                    return true;
+                case "staff.member2":
+                    value = english ? "STAFF 2" : "\u041f\u0415\u0420\u0421\u041e\u041d\u0410\u041b 2";
+                    return true;
+                case "staff.rescue":
+                    value = english ? "RESCUE STAFF" : "\u0421\u041f\u0410\u0421\u0418\u0422\u0415 \u041f\u0415\u0420\u0421\u041e\u041d\u0410\u041b";
+                    return true;
+                case "staff.escort":
+                    value = english ? "ESCORT TO SPHERE" : "\u0421\u041e\u041f\u0420\u041e\u0412\u041e\u0414\u0418\u0422\u0415 \u041a \u0421\u0424\u0415\u0420\u0415";
+                    return true;
+                case "staff.safe":
+                    value = english ? "SAFE" : "\u0412 \u0411\u0415\u0417\u041e\u041f\u0410\u0421\u041d\u041e\u0421\u0422\u0418";
+                    return true;
+                case "staff.released":
+                    value = english ? "{0} RELEASED - ESCORT TO SPHERE" : "{0} \u041e\u0421\u0412\u041e\u0411\u041e\u0416\u0414\u0415\u041d - \u0421\u041e\u041f\u0420\u041e\u0412\u041e\u0414\u0418\u0422\u0415 \u041a \u0421\u0424\u0415\u0420\u0415";
+                    return true;
+                case "staff.revived":
+                    value = english ? "{0} REVIVED" : "{0} \u0412 \u0421\u0422\u0420\u041e\u042e";
+                    return true;
+                case "staff.atSphere":
+                    value = english ? "{0} AT SPHERE" : "{0} \u0423 \u0421\u0424\u0415\u0420\u042b";
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         public static string Text(string key)
         {
+            if (TryGetSupplementalText(key, out string supplemental))
+            {
+                return supplemental;
+            }
+
             Dictionary<string, string> table = CurrentLanguage == PortalNightsLanguage.Russian ? Ru : En;
             if (table.TryGetValue(key, out string value))
             {

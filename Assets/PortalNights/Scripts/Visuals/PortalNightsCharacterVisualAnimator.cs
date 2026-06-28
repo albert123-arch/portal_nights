@@ -20,16 +20,24 @@ namespace PortalNights.Visuals
             {
                 animator = GetComponentInChildren<Animator>(true);
             }
+
+            DisableRootMotion();
+        }
+
+        private void OnEnable()
+        {
+            DisableRootMotion();
         }
 
         public void SetAnimator(Animator targetAnimator)
         {
             animator = targetAnimator;
+            DisableRootMotion();
         }
 
         public void SetMoving(bool moving)
         {
-            if (animator != null)
+            if (CanDriveAnimator())
             {
                 animator.SetBool(MovingHash, moving);
             }
@@ -37,7 +45,7 @@ namespace PortalNights.Visuals
 
         public void SetRunning(bool running)
         {
-            if (animator != null)
+            if (CanDriveAnimator())
             {
                 animator.SetBool(RunningHash, running);
             }
@@ -45,7 +53,7 @@ namespace PortalNights.Visuals
 
         public void SetMoveSpeed(float normalizedSpeed)
         {
-            if (animator != null)
+            if (CanDriveAnimator())
             {
                 animator.SetFloat(MoveSpeedHash, Mathf.Clamp01(normalizedSpeed));
             }
@@ -53,22 +61,47 @@ namespace PortalNights.Visuals
 
         public void TriggerAttack()
         {
-            animator?.SetTrigger(AttackHash);
+            if (CanDriveAnimator())
+            {
+                animator.SetTrigger(AttackHash);
+            }
         }
 
         public void TriggerHit()
         {
-            animator?.SetTrigger(HitHash);
+            if (CanDriveAnimator())
+            {
+                animator.SetTrigger(HitHash);
+            }
         }
 
         public void TriggerDeath()
         {
-            animator?.SetTrigger(DeathHash);
+            if (CanDriveAnimator())
+            {
+                animator.SetTrigger(DeathHash);
+            }
         }
 
         public void TriggerSpecial()
         {
-            animator?.SetTrigger(SpecialHash);
+            if (CanDriveAnimator())
+            {
+                animator.SetTrigger(SpecialHash);
+            }
+        }
+
+        private void DisableRootMotion()
+        {
+            if (animator != null)
+            {
+                animator.applyRootMotion = false;
+            }
+        }
+
+        private bool CanDriveAnimator()
+        {
+            return animator != null && animator.isActiveAndEnabled && animator.runtimeAnimatorController != null;
         }
     }
 }

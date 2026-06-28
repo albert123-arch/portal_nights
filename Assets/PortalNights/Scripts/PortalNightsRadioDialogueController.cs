@@ -8,6 +8,8 @@ namespace PortalNights
     {
         private readonly Queue<PortalNightsDialogueLine> queuedLines = new Queue<PortalNightsDialogueLine>();
 
+        [SerializeField] private bool showDebugPanelBackgrounds;
+
         private Canvas canvas;
         private CanvasGroup panelGroup;
         private Text speakerText;
@@ -56,6 +58,8 @@ namespace PortalNights
 
             Image background = panelObject.GetComponent<Image>();
             background.color = new Color(0.015f, 0.035f, 0.07f, 0.92f);
+            background.raycastTarget = false;
+            background.enabled = showDebugPanelBackgrounds;
 
             GameObject cyanLine = new GameObject("CyanSignalLine", typeof(RectTransform), typeof(Image));
             cyanLine.transform.SetParent(panelObject.transform, false);
@@ -65,7 +69,10 @@ namespace PortalNights
             cyanRect.pivot = new Vector2(0.5f, 1f);
             cyanRect.sizeDelta = new Vector2(0f, 3f);
             cyanRect.anchoredPosition = Vector2.zero;
-            cyanLine.GetComponent<Image>().color = new Color(0.26f, 0.96f, 1f, 0.95f);
+            Image cyanImage = cyanLine.GetComponent<Image>();
+            cyanImage.color = new Color(0.26f, 0.96f, 1f, 0.95f);
+            cyanImage.raycastTarget = false;
+            cyanImage.enabled = showDebugPanelBackgrounds;
 
             GameObject portraitObject = new GameObject("PortraitPlaceholder", typeof(RectTransform), typeof(Image));
             portraitObject.transform.SetParent(panelObject.transform, false);
@@ -77,6 +84,8 @@ namespace PortalNights
             portraitRect.sizeDelta = new Vector2(56f, 56f);
             portraitAccent = portraitObject.GetComponent<Image>();
             portraitAccent.color = new Color(0.12f, 0.66f, 0.92f, 0.38f);
+            portraitAccent.raycastTarget = false;
+            portraitAccent.enabled = showDebugPanelBackgrounds;
 
             speakerText = CreateText("Speaker", panelObject.transform, font, 18, FontStyle.Bold, new Color(0.42f, 0.98f, 1f, 1f));
             RectTransform speakerRect = speakerText.rectTransform;

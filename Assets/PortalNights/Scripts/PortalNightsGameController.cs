@@ -5,6 +5,7 @@ using Unity.Netcode;
 using Unity.Netcode.Components;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine.InputSystem;
+using PortalNights.Visuals;
 
 namespace PortalNights
 {
@@ -104,6 +105,7 @@ namespace PortalNights
         private readonly Dictionary<Transform, Transform> objectiveMarkers = new Dictionary<Transform, Transform>();
         private readonly Dictionary<Transform, PlanetEnvironmentCache> planetEnvironmentCaches = new Dictionary<Transform, PlanetEnvironmentCache>();
         private readonly PortalNightsLeaderboardService leaderboardService = new PortalNightsLocalLeaderboardService();
+        private static Camera cachedWorldLabelCamera;
 
         private readonly NetworkVariable<int> waveNumber = new NetworkVariable<int>(
             0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
@@ -1529,7 +1531,7 @@ namespace PortalNights
             if (planet3HoldKind == PortalNightsPlanet3HoldKind.ReleaseStaff && planet3HoldStaff != null)
             {
                 planet3HoldStaff.ReleaseServer();
-                BroadcastToastClientRpc(planet3HoldStaff.StaffId + " RELEASED - ESCORT TO RELAY");
+                BroadcastToastClientRpc(PortalNightsLocalization.Format("staff.released", planet3HoldStaff.DisplayName));
                 CancelPlanet3Hold(false);
                 SetGameState(PortalNightsGameState.Planet3_EscortToSphere);
                 RefreshPlanet3StaffProgressServer();
@@ -1539,7 +1541,7 @@ namespace PortalNights
             if (planet3HoldKind == PortalNightsPlanet3HoldKind.ReviveStaff && planet3HoldStaff != null)
             {
                 planet3HoldStaff.ReviveServer();
-                BroadcastToastClientRpc(planet3HoldStaff.StaffId + " REVIVED");
+                BroadcastToastClientRpc(PortalNightsLocalization.Format("staff.revived", planet3HoldStaff.DisplayName));
                 CancelPlanet3Hold(false);
                 RefreshPlanet3StaffProgressServer();
                 return;
@@ -1787,6 +1789,7 @@ namespace PortalNights
             Quaternion spawnRotation = portalSpawn == null ? Quaternion.identity : portalSpawn.rotation;
             GameObject enemyObject = Instantiate(prefab, spawnPosition, spawnRotation);
             PortalNightsEnemy enemy = enemyObject.GetComponent<PortalNightsEnemy>();
+            PortalNightsGroundingUtility.GroundGameplayRoot(enemyObject, 1);
             NetworkObject networkObject = enemyObject.GetComponent<NetworkObject>();
             if (networkObject != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
             {
@@ -1798,6 +1801,7 @@ namespace PortalNights
                 enemy.ConfigureForWave(shouldSpawnBrute ? PortalNightsEnemyKind.Brute : PortalNightsEnemyKind.Small, waveNumber.Value, shouldSpawnBrute ? bruteEnemyReward : smallEnemyReward);
                 ApplyUniverseScalingToWaveEnemy(enemy, shouldSpawnBrute);
                 enemy.ConfigureLaneServer(lane, lanePath);
+                ApplyEnemyVisualServer(enemy, 1);
             }
 
             if (shouldSpawnBrute)
@@ -2267,7 +2271,7 @@ namespace PortalNights
                 string progress = planet3HoldStaff == staff && planet3HoldProgress > 0.01f ? $" {Mathf.CeilToInt(planet3HoldProgress * 100f / (staff.NeedsRevive ? 4f : 3f))}%" : string.Empty;
                 return staff.NeedsRevive
                     ? PortalNightsLocalization.Format("prompt.holdRevive", progress)
-                    : PortalNightsLocalization.Format("prompt.holdReleaseStaff", staff.StaffId, progress);
+                    : PortalNightsLocalization.Format("prompt.holdReleaseStaff", staff.DisplayName, progress);
             }
 
             if ((GameState == PortalNightsGameState.Planet3_SphereReady || GameState == PortalNightsGameState.Planet3_SphereActivation) && IsNearRelaySphere(playerPosition))
@@ -2452,6 +2456,7 @@ namespace PortalNights
             spawnPosition += new Vector3(Random.Range(-1.4f, 1.4f), 0f, Random.Range(-1.4f, 1.4f));
             GameObject enemyObject = Instantiate(prefab, spawnPosition, Quaternion.identity);
             PortalNightsEnemy enemy = enemyObject.GetComponent<PortalNightsEnemy>();
+            PortalNightsGroundingUtility.GroundGameplayRoot(enemyObject, 2);
             NetworkObject networkObject = enemyObject.GetComponent<NetworkObject>();
             if (networkObject != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
             {
@@ -2463,6 +2468,7 @@ namespace PortalNights
                 enemy.ConfigureForWave(brute ? PortalNightsEnemyKind.Brute : PortalNightsEnemyKind.Small, Mathf.Max(1, waveNumber.Value), brute ? bruteEnemyReward : smallEnemyReward);
                 ApplyUniverseScalingToWaveEnemy(enemy, brute);
                 enemy.ConfigureLaneServer(PortalNightsLane.Left, null);
+                ApplyEnemyVisualServer(enemy, 2);
             }
 
             if (brute)
@@ -2494,6 +2500,18 @@ namespace PortalNights
 
             PortalNightsUniverseScaling scaling = CurrentScaling;
             enemy.ApplyUniverseScalingServer(scaling.enemyHpMultiplier, scaling.enemyDamageMultiplier, scaling.ScaleCoins(brute ? bruteEnemyReward : smallEnemyReward));
+        }
+
+        private void ApplyEnemyVisualServer(PortalNightsEnemy enemy, int planetIndex, bool enhanced = false, PortalNightsPlanet4EnemyVariant planet4Variant = PortalNightsPlanet4EnemyVariant.Swarmer)
+        {
+            if (enemy == null)
+            {
+                return;
+            }
+
+            PortalNightsEnemyVisualKind kind = PortalNightsEnemyVisualCatalog.GetVisualKindForEnemy(planetIndex, enemy.EnemyKind, enhanced, planet4Variant);
+            float targetHeight = PortalNightsEnemyVisualCatalog.GetTargetHeightForPlanet(planetIndex, kind, enemy.EnemyKind, enhanced, planet4Variant);
+            enemy.ApplyVisualServer(kind, targetHeight, planetIndex);
         }
 
         private void HandleProgressionEnemyKilledServer()
@@ -2939,6 +2957,7 @@ namespace PortalNights
 
             GameObject enemyObject = Instantiate(prefab, spawnPosition, Quaternion.identity);
             PortalNightsEnemy enemy = enemyObject.GetComponent<PortalNightsEnemy>();
+            PortalNightsGroundingUtility.GroundGameplayRoot(enemyObject, 4);
             NetworkObject networkObject = enemyObject.GetComponent<NetworkObject>();
             if (networkObject != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
             {
@@ -2951,7 +2970,9 @@ namespace PortalNights
             }
 
             ConfigurePlanet4EnemyStats(enemyObject, enemy, variant);
+            PortalNightsGroundingUtility.GroundGameplayRoot(enemyObject, 4);
             enemy.ConfigureLaneServer(riftIndex == 2 ? PortalNightsLane.Right : PortalNightsLane.Left, null);
+            ApplyEnemyVisualServer(enemy, 4, false, variant);
             planet4EnemyRiftIndex[enemy] = riftIndex;
             planet4EnemyVariants[enemy] = variant;
             enemiesRemaining.Value = Mathf.Max(0, planet4TargetKills - planet4EnemiesDefeated.Value);
@@ -3444,6 +3465,7 @@ namespace PortalNights
             PortalNightsAlly ally = helper.AddComponent<PortalNightsAlly>();
             ally.Configure(26f, 9f, 0.85f, head, muzzle, beam);
             body.name = "ReplaceableHelperVisual";
+            PortalNightsGroundingUtility.GroundGameplayRoot(helper, 5);
 
             NetworkObject networkObject = helper.GetComponent<NetworkObject>();
             if (networkObject != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
@@ -3485,6 +3507,7 @@ namespace PortalNights
             PortalNightsPlanet5BossController controller = boss.AddComponent<PortalNightsPlanet5BossController>();
             controller.Configure(bossName, ranged, maxHealth, speed, damage, range, aimPoint);
             health.ServerInitialize(maxHealth, true);
+            PortalNightsGroundingUtility.GroundGameplayRoot(boss, 5);
 
             NetworkObject networkObject = boss.GetComponent<NetworkObject>();
             if (networkObject != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
@@ -3492,6 +3515,8 @@ namespace PortalNights
                 networkObject.Spawn(true);
             }
 
+            PortalNightsEnemyVisualKind visualKind = PortalNightsEnemyVisualCatalog.GetVisualKindForBoss(bossName);
+            controller.ApplyVisualServer(visualKind, PortalNightsEnemyVisualCatalog.GetBossTargetHeight(visualKind), 5);
             return controller;
         }
 
@@ -4730,7 +4755,7 @@ namespace PortalNights
                 if (staff.State == PortalNightsStaffState.Following && IsInsidePlanet3SafeZone(staff.transform.position))
                 {
                     staff.SetWaitingAtSphereServer();
-                    BroadcastToastClientRpc(staff.StaffId + " AT RELAY SPHERE");
+                    BroadcastToastClientRpc(PortalNightsLocalization.Format("staff.atSphere", staff.DisplayName));
                 }
 
                 if (staff.IsAtSphere)
@@ -4861,6 +4886,7 @@ namespace PortalNights
                 spawnPosition += new Vector3(Random.Range(-1.6f, 1.6f), 0f, Random.Range(-1.6f, 1.6f));
                 GameObject enemyObject = Instantiate(prefab, spawnPosition, Quaternion.identity);
                 PortalNightsEnemy enemy = enemyObject.GetComponent<PortalNightsEnemy>();
+                PortalNightsGroundingUtility.GroundGameplayRoot(enemyObject, 3);
                 NetworkObject networkObject = enemyObject.GetComponent<NetworkObject>();
                 if (networkObject != null && NetworkManager.Singleton != null && NetworkManager.Singleton.IsListening)
                 {
@@ -4871,11 +4897,14 @@ namespace PortalNights
                 {
                     enemy.ConfigureForWave(enhanced ? PortalNightsEnemyKind.Brute : PortalNightsEnemyKind.Small, Mathf.Max(6, waveNumber.Value + attackIndexOffset()), enhanced ? bruteEnemyReward : smallEnemyReward);
                     ApplyUniverseScalingToWaveEnemy(enemy, enhanced);
-                    enemy.ConfigureLaneServer(riftId == "East" ? PortalNightsLane.Right : PortalNightsLane.Left, null);
                     if (enhanced)
                     {
                         enemy.ApplyEnhancedServer(1.5f, 1.2f, 1.15f);
                     }
+
+                    PortalNightsGroundingUtility.GroundGameplayRoot(enemyObject, 3);
+                    enemy.ConfigureLaneServer(riftId == "East" ? PortalNightsLane.Right : PortalNightsLane.Left, null);
+                    ApplyEnemyVisualServer(enemy, 3, enhanced);
                 }
             }
         }
@@ -5249,7 +5278,8 @@ namespace PortalNights
                 foreach (PortalNightsStaffRescue staff in planet3Staff)
                 {
                     bool active = staff != null && (staff.NeedsRelease || staff.NeedsRevive || staff.State == PortalNightsStaffState.Following);
-                    SetObjectiveMarker(staff == null ? null : staff.transform, active, PortalNightsLocalization.Text("marker.staff"), new Color(0.52f, 1f, 0.68f, 1f), 2.6f);
+                    string staffLabel = staff == null ? PortalNightsLocalization.Text("marker.staff") : staff.DisplayName;
+                    SetObjectiveMarker(staff == null ? null : staff.transform, active, staffLabel, new Color(0.52f, 1f, 0.68f, 1f), 2.6f);
                 }
             }
 
@@ -5297,6 +5327,7 @@ namespace PortalNights
             }
 
             marker.localPosition = new Vector3(0f, height + Mathf.Sin(Time.time * 4.2f) * 0.12f, 0f);
+            FaceWorldLabelToCamera(marker);
             TextMesh textMesh = marker.GetComponent<TextMesh>();
             if (textMesh != null)
             {
@@ -5310,6 +5341,28 @@ namespace PortalNights
                     textMesh.color = color;
                 }
             }
+        }
+
+        private static void FaceWorldLabelToCamera(Transform marker)
+        {
+            if (cachedWorldLabelCamera == null || !cachedWorldLabelCamera.isActiveAndEnabled)
+            {
+                cachedWorldLabelCamera = Camera.main;
+            }
+
+            Camera mainCamera = cachedWorldLabelCamera;
+            if (marker == null || mainCamera == null)
+            {
+                return;
+            }
+
+            Vector3 toCamera = marker.position - mainCamera.transform.position;
+            if (toCamera.sqrMagnitude <= 0.001f)
+            {
+                return;
+            }
+
+            marker.rotation = Quaternion.LookRotation(toCamera.normalized, Vector3.up);
         }
 
         private void HideAllObjectiveMarkers()
