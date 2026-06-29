@@ -8,6 +8,9 @@ namespace PortalNights.Scenes
     [DisallowMultipleComponent]
     public sealed class PortalNightsSceneTransitionManager : MonoBehaviour
     {
+        private const string LegacyArenaSceneName = "PortalNightsArena";
+        private const string CoreSceneName = "PortalNightsCore";
+
         [SerializeField] private PortalNightsPlanetSceneRegistry registry;
         [SerializeField] private bool debugLogs;
         [SerializeField] private bool useAdditiveLoading = true;
@@ -46,6 +49,40 @@ namespace PortalNights.Scenes
             }
         }
 
+        public bool IsPlanetLoaded(int planetIndex)
+        {
+            if (!TryGetRegistry(out PortalNightsPlanetSceneRegistry activeRegistry))
+            {
+                return false;
+            }
+
+            if (!activeRegistry.TryGetDefinition(planetIndex, out PortalNightsPlanetSceneDefinition definition))
+            {
+                return false;
+            }
+
+            return IsSceneLoaded(definition.sceneName);
+        }
+
+        public bool IsSceneLoaded(string sceneName)
+        {
+            if (string.IsNullOrWhiteSpace(sceneName))
+            {
+                return false;
+            }
+
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                Scene scene = SceneManager.GetSceneAt(i);
+                if (scene.IsValid() && scene.isLoaded && string.Equals(scene.name, sceneName, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public IEnumerator LoadPlanetAsync(int planetIndex)
         {
             if (isTransitioning)
@@ -54,101 +91,90 @@ namespace PortalNights.Scenes
                 yield break;
             }
 
-            isTransitioning = true;
-
-            if (registry == null)
+            if (!TryGetRegistry(out PortalNightsPlanetSceneRegistry activeRegistry))
             {
-                registry = GetComponent<PortalNightsPlanetSceneRegistry>();
-            }
-
-            if (registry == null)
-            {
-                Debug.LogWarning("[PortalNights][SceneTransition] Missing PortalNightsPlanetSceneRegistry reference.", this);
-                isTransitioning = false;
                 yield break;
             }
 
-            if (!registry.TryGetDefinition(planetIndex, out PortalNightsPlanetSceneDefinition definition))
+            if (!activeRegistry.TryGetDefinition(planetIndex, out PortalNightsPlanetSceneDefinition definition))
             {
-                Debug.LogWarning("[PortalNights][SceneTransition] No scene definition exists for planet index " + planetIndex + ".", this);
-                isTransitioning = false;
+                Debug.LogWarning("[PortalNights][SceneTransition] Invalid planet index " + planetIndex + ". No scene definition exists.", this);
+                yield break;
+            }
+
+            if (currentLoadedPlanetIndex == planetIndex || string.Equals(currentLoadedPlanetSceneName, definition.sceneName, StringComparison.Ordinal))
+            {
+                DebugLog("Ignoring duplicate load request for planet " + planetIndex + " / scene '" + definition.sceneName + "'.");
+                yield break;
+            }
+
+            if (IsSceneLoaded(definition.sceneName))
+            {
+                Debug.LogWarning("[PortalNights][SceneTransition] Scene '" + definition.sceneName + "' is already loaded. Refusing duplicate additive load.", this);
                 yield break;
             }
 
             if (!Application.CanStreamedLevelBeLoaded(definition.sceneName))
             {
-                Debug.LogWarning("[PortalNights][SceneTransition] Scene cannot be loaded yet: " + definition.sceneName + ".", this);
-                isTransitioning = false;
+                Debug.LogWarning("[PortalNights][SceneTransition] Scene '" + definition.sceneName + "' is not registered in Build Settings and cannot be loaded additively. Expected path: " + definition.scenePath, this);
                 yield break;
             }
 
-            if (!string.IsNullOrEmpty(currentLoadedPlanetSceneName))
+            isTransitioning = true;
+            try
             {
-                if (string.Equals(currentLoadedPlanetSceneName, definition.sceneName, StringComparison.Ordinal))
+                if (!string.IsNullOrEmpty(currentLoadedPlanetSceneName))
                 {
-                    DebugLog("Scene '" + definition.sceneName + "' is already tracked as the current additive planet.");
-                    isTransitioning = false;
+                    yield return UnloadTrackedPlanetSceneAsync();
+                }
+
+                yield return FadeOutIfAvailable();
+
+                if (!useAdditiveLoading)
+                {
+                    DebugLog("useAdditiveLoading is disabled in the inspector, but the dormant transition manager still forces additive loads for Phase 5A validation safety.");
+                }
+
+                AsyncOperation loadOperation = SceneManager.LoadSceneAsync(definition.sceneName, LoadSceneMode.Additive);
+                if (loadOperation == null)
+                {
+                    Debug.LogWarning("[PortalNights][SceneTransition] Failed to start additive load for '" + definition.sceneName + "'.", this);
+                    yield return FadeInIfAvailable();
                     yield break;
                 }
 
-                yield return UnloadTrackedPlanetSceneAsync();
-            }
-
-            yield return FadeOutIfAvailable();
-
-            if (!useAdditiveLoading)
-            {
-                DebugLog("useAdditiveLoading is disabled, but Phase 2 intentionally forces additive loading only.");
-            }
-
-            AsyncOperation loadOperation = SceneManager.LoadSceneAsync(definition.sceneName, LoadSceneMode.Additive);
-            if (loadOperation == null)
-            {
-                Debug.LogWarning("[PortalNights][SceneTransition] Failed to start additive load for '" + definition.sceneName + "'.", this);
-                yield return FadeInIfAvailable();
-                isTransitioning = false;
-                yield break;
-            }
-
-            while (!loadOperation.isDone)
-            {
-                yield return null;
-            }
-
-            Scene loadedScene = SceneManager.GetSceneByName(definition.sceneName);
-            if (!loadedScene.IsValid() || !loadedScene.isLoaded)
-            {
-                Debug.LogWarning("[PortalNights][SceneTransition] Loaded scene handle is invalid for '" + definition.sceneName + "'.", this);
-                yield return FadeInIfAvailable();
-                isTransitioning = false;
-                yield break;
-            }
-
-            PortalNightsPlanetSceneRoot loadedRoot = FindPlanetSceneRootInScene(loadedScene, planetIndex, definition.expectedRootName);
-            if (loadedRoot == null)
-            {
-                Debug.LogWarning("[PortalNights][SceneTransition] No PortalNightsPlanetSceneRoot was found inside additive scene '" + definition.sceneName + "'.", this);
-                AsyncOperation cleanupOperation = SceneManager.UnloadSceneAsync(loadedScene);
-                while (cleanupOperation != null && !cleanupOperation.isDone)
+                while (!loadOperation.isDone)
                 {
                     yield return null;
                 }
 
+                Scene loadedScene = SceneManager.GetSceneByName(definition.sceneName);
+                if (!loadedScene.IsValid() || !loadedScene.isLoaded)
+                {
+                    Debug.LogWarning("[PortalNights][SceneTransition] Loaded scene handle is invalid for '" + definition.sceneName + "'.", this);
+                    yield return FadeInIfAvailable();
+                    yield break;
+                }
+
+                PortalNightsPlanetSceneRoot loadedRoot = FindPlanetSceneRootInScene(loadedScene, planetIndex, definition.expectedRootName);
+                if (!IsValidLoadedPlanetRoot(loadedScene, loadedRoot, definition))
+                {
+                    Debug.LogWarning("[PortalNights][SceneTransition] Loaded scene '" + definition.sceneName + "' did not contain a valid PortalNightsPlanetSceneRoot matching planet " + planetIndex + " and root '" + definition.expectedRootName + "'.", this);
+                    yield return UnloadSceneByHandleAsync(loadedScene);
+                    yield return FadeInIfAvailable();
+                    yield break;
+                }
+
+                currentLoadedPlanetSceneName = definition.sceneName;
+                currentLoadedPlanetIndex = planetIndex;
+                currentPlanetRoot = loadedRoot;
+
                 yield return FadeInIfAvailable();
-                isTransitioning = false;
-                yield break;
             }
-
-            currentLoadedPlanetSceneName = definition.sceneName;
-            currentLoadedPlanetIndex = planetIndex;
-            currentPlanetRoot = loadedRoot;
-
-            // Phase 2 intentionally stops at discovery only.
-            // Scene-placed NetworkObjects inside additive planet scenes are a Phase 5 risk and
-            // must be handled with explicit Netcode scene management instead of ad hoc Spawn calls.
-
-            yield return FadeInIfAvailable();
-            isTransitioning = false;
+            finally
+            {
+                isTransitioning = false;
+            }
         }
 
         public IEnumerator UnloadCurrentPlanetAsync()
@@ -165,10 +191,16 @@ namespace PortalNights.Scenes
             }
 
             isTransitioning = true;
-            yield return FadeOutIfAvailable();
-            yield return UnloadTrackedPlanetSceneAsync();
-            yield return FadeInIfAvailable();
-            isTransitioning = false;
+            try
+            {
+                yield return FadeOutIfAvailable();
+                yield return UnloadTrackedPlanetSceneAsync();
+                yield return FadeInIfAvailable();
+            }
+            finally
+            {
+                isTransitioning = false;
+            }
         }
 
         public bool TryGetCurrentPlanetRoot(out PortalNightsPlanetSceneRoot root)
@@ -196,12 +228,6 @@ namespace PortalNights.Scenes
                     {
                         return exactRoot;
                     }
-
-                    PortalNightsPlanetSceneRoot nestedExactRoot = candidateRoot.GetComponentInChildren<PortalNightsPlanetSceneRoot>(true);
-                    if (nestedExactRoot != null)
-                    {
-                        return nestedExactRoot;
-                    }
                 }
             }
 
@@ -217,29 +243,60 @@ namespace PortalNights.Scenes
                 }
             }
 
-            for (int i = 0; i < sceneRoots.Length; i++)
+            return null;
+        }
+
+        private bool TryGetRegistry(out PortalNightsPlanetSceneRegistry activeRegistry)
+        {
+            activeRegistry = registry;
+            if (activeRegistry == null)
             {
-                PortalNightsPlanetSceneRoot fallbackRoot = sceneRoots[i].GetComponentInChildren<PortalNightsPlanetSceneRoot>(true);
-                if (fallbackRoot != null)
-                {
-                    return fallbackRoot;
-                }
+                activeRegistry = GetComponent<PortalNightsPlanetSceneRegistry>();
+                registry = activeRegistry;
             }
 
-            return null;
+            if (activeRegistry == null)
+            {
+                Debug.LogWarning("[PortalNights][SceneTransition] Missing PortalNightsPlanetSceneRegistry reference.", this);
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool IsValidLoadedPlanetRoot(Scene loadedScene, PortalNightsPlanetSceneRoot loadedRoot, PortalNightsPlanetSceneDefinition definition)
+        {
+            if (loadedRoot == null || !loadedScene.IsValid() || !loadedScene.isLoaded)
+            {
+                return false;
+            }
+
+            if (loadedRoot.gameObject.scene != loadedScene)
+            {
+                return false;
+            }
+
+            if (loadedRoot.PlanetIndex != definition.planetIndex)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(definition.expectedRootName)
+                && !string.Equals(loadedRoot.gameObject.name, definition.expectedRootName, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            return true;
         }
 
         private IEnumerator FadeOutIfAvailable()
         {
-            // TODO: Future phases can softly integrate PortalNightsPlanetTransitionDirector here.
-            // Phase 2 keeps the additive loader dormant and avoids touching current transition UI flow.
             yield break;
         }
 
         private IEnumerator FadeInIfAvailable()
         {
-            // TODO: Future phases can softly integrate PortalNightsPlanetTransitionDirector here.
-            // Phase 2 keeps the additive loader dormant and avoids touching current transition UI flow.
             yield break;
         }
 
@@ -250,25 +307,42 @@ namespace PortalNights.Scenes
                 yield break;
             }
 
-            string sceneNameToUnload = currentLoadedPlanetSceneName;
-            if (string.Equals(sceneNameToUnload, "PortalNightsArena", StringComparison.Ordinal))
+            if (IsProtectedSceneName(currentLoadedPlanetSceneName))
             {
-                Debug.LogWarning("[PortalNights][SceneTransition] Refusing to unload PortalNightsArena from the dormant transition manager.", this);
+                Debug.LogWarning("[PortalNights][SceneTransition] Refusing to unload protected scene '" + currentLoadedPlanetSceneName + "'. Clearing stale tracked state only.", this);
                 ClearTrackedPlanetState();
                 yield break;
             }
 
-            Scene sceneToUnload = SceneManager.GetSceneByName(sceneNameToUnload);
-            if (sceneToUnload.IsValid() && sceneToUnload.isLoaded)
+            Scene sceneToUnload = SceneManager.GetSceneByName(currentLoadedPlanetSceneName);
+            yield return UnloadSceneByHandleAsync(sceneToUnload);
+            ClearTrackedPlanetState();
+        }
+
+        private IEnumerator UnloadSceneByHandleAsync(Scene sceneToUnload)
+        {
+            if (!sceneToUnload.IsValid() || !sceneToUnload.isLoaded)
             {
-                AsyncOperation unloadOperation = SceneManager.UnloadSceneAsync(sceneToUnload);
-                while (unloadOperation != null && !unloadOperation.isDone)
-                {
-                    yield return null;
-                }
+                yield break;
             }
 
-            ClearTrackedPlanetState();
+            if (IsProtectedSceneName(sceneToUnload.name))
+            {
+                Debug.LogWarning("[PortalNights][SceneTransition] Refusing to unload protected scene '" + sceneToUnload.name + "'.", this);
+                yield break;
+            }
+
+            AsyncOperation unloadOperation = SceneManager.UnloadSceneAsync(sceneToUnload);
+            while (unloadOperation != null && !unloadOperation.isDone)
+            {
+                yield return null;
+            }
+        }
+
+        private static bool IsProtectedSceneName(string sceneName)
+        {
+            return string.Equals(sceneName, LegacyArenaSceneName, StringComparison.Ordinal)
+                || string.Equals(sceneName, CoreSceneName, StringComparison.Ordinal);
         }
 
         private void ClearTrackedPlanetState()

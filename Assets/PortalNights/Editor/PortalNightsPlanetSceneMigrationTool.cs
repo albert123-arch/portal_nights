@@ -20,8 +20,11 @@ namespace PortalNights.EditorTools
         private const string GeneratedCoreScenesFolder = "Assets/PortalNights/Scenes/Core";
         private const string Phase3ReportPath = "Assets/PortalNights/Reports/SceneMigrationPhase3Report.md";
         private const string Phase4ReportPath = "Assets/PortalNights/Reports/SceneMigrationPhase4Report.md";
+        private const string Phase5AReportPath = "Assets/PortalNights/Reports/SceneMigrationPhase5AReport.md";
         private const string CoreScenePath = GeneratedCoreScenesFolder + "/PortalNightsCore.unity";
         private const string Planet1ScenePath = GeneratedScenesFolder + "/PortalNightsPlanet1_Defense.unity";
+        private const string PortalNightsArenaSceneName = "PortalNightsArena";
+        private const string PortalNightsCoreSceneName = "PortalNightsCore";
 
         private static readonly PlanetScenePlan[] Plans =
         {
@@ -84,6 +87,26 @@ namespace PortalNights.EditorTools
             "Planet5_CrimsonSingularity"
         };
 
+        private static readonly string[] Phase5ARequiredScenePaths =
+        {
+            SourceScenePath,
+            CoreScenePath,
+            Planet1ScenePath,
+            GeneratedScenesFolder + "/PortalNightsPlanet2_CrystalMoon.unity",
+            GeneratedScenesFolder + "/PortalNightsPlanet3_AshRelayStation.unity",
+            GeneratedScenesFolder + "/PortalNightsPlanet4_SwarmExpanse.unity",
+            GeneratedScenesFolder + "/PortalNightsPlanet5_CrimsonSingularity.unity"
+        };
+
+        private static readonly Phase5APlanetValidationPlan[] Phase5APlanetPlans =
+        {
+            new Phase5APlanetValidationPlan(1, "PortalNightsPlanet1_Defense", Planet1ScenePath, "Planet1_Defense"),
+            new Phase5APlanetValidationPlan(2, "PortalNightsPlanet2_CrystalMoon", GeneratedScenesFolder + "/PortalNightsPlanet2_CrystalMoon.unity", "Planet2_CrystalMoon"),
+            new Phase5APlanetValidationPlan(3, "PortalNightsPlanet3_AshRelayStation", GeneratedScenesFolder + "/PortalNightsPlanet3_AshRelayStation.unity", "Planet3_AshRelayStation"),
+            new Phase5APlanetValidationPlan(4, "PortalNightsPlanet4_SwarmExpanse", GeneratedScenesFolder + "/PortalNightsPlanet4_SwarmExpanse.unity", "Planet4_SwarmExpanse"),
+            new Phase5APlanetValidationPlan(5, "PortalNightsPlanet5_CrimsonSingularity", GeneratedScenesFolder + "/PortalNightsPlanet5_CrimsonSingularity.unity", "Planet5_CrimsonSingularity")
+        };
+
         private static readonly string[] OptionalGlobalNameKeywords =
         {
             "TransitionDirector",
@@ -115,6 +138,7 @@ namespace PortalNights.EditorTools
         private static Phase4Planet1GenerationResult lastPhase4Planet1GenerationResult;
         private static Phase4CoreValidationResult lastPhase4CoreValidationResult;
         private static Phase4Planet1ValidationResult lastPhase4Planet1ValidationResult;
+        private static Phase5AValidationResult lastPhase5AValidationResult;
 
         [MenuItem("Portal Nights/Scene Migration/Dry Run Planet Scene Copy P2-P5")]
         public static void DryRunPlanetSceneCopyP2P5()
@@ -232,6 +256,25 @@ namespace PortalNights.EditorTools
             }
         }
 
+        [MenuItem("Portal Nights/Scene Migration/Validate Build Settings And Additive Scene Loading")]
+        public static void ValidateBuildSettingsAndAdditiveSceneLoading()
+        {
+            if (!PrepareForSceneOperation())
+            {
+                return;
+            }
+
+            try
+            {
+                lastPhase5AValidationResult = ValidateBuildSettingsAndAdditiveSceneLoadingInternal(true);
+                WritePhase5AReport();
+            }
+            finally
+            {
+                ReopenSourceScene();
+            }
+        }
+
         public static void RunPhase3WorkflowFromCommandLine()
         {
             bool success = false;
@@ -316,6 +359,394 @@ namespace PortalNights.EditorTools
             if (!success)
             {
                 throw new InvalidOperationException("Phase 4 workflow did not complete successfully.");
+            }
+        }
+
+        public static void RunPhase5AWorkflowFromCommandLine()
+        {
+            bool success = false;
+            try
+            {
+                RegisterGeneratedScenesInBuildSettings(true);
+                lastPhase5AValidationResult = ValidateBuildSettingsAndAdditiveSceneLoadingInternal(true);
+                if (lastPhase5AValidationResult == null || !lastPhase5AValidationResult.Success)
+                {
+                    throw new InvalidOperationException("Phase 5A validation failed. Check SceneMigrationPhase5AReport.md for details.");
+                }
+
+                success = true;
+            }
+            finally
+            {
+                ReopenSourceScene();
+                WritePhase5AReport();
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+            }
+
+            if (!success)
+            {
+                throw new InvalidOperationException("Phase 5A workflow did not complete successfully.");
+            }
+        }
+
+        private static void RegisterGeneratedScenesInBuildSettings(bool logToConsole)
+        {
+            for (int i = 0; i < Phase5ARequiredScenePaths.Length; i++)
+            {
+                if (!File.Exists(Phase5ARequiredScenePaths[i]))
+                {
+                    throw new FileNotFoundException("Required scene asset is missing: " + Phase5ARequiredScenePaths[i], Phase5ARequiredScenePaths[i]);
+                }
+            }
+
+            EditorBuildSettingsScene[] existingScenes = EditorBuildSettings.scenes ?? Array.Empty<EditorBuildSettingsScene>();
+            List<EditorBuildSettingsScene> updatedScenes = new List<EditorBuildSettingsScene>(existingScenes.Length + Phase5ARequiredScenePaths.Length);
+            HashSet<string> addedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            for (int i = 0; i < Phase5ARequiredScenePaths.Length; i++)
+            {
+                string requiredPath = NormalizeScenePath(Phase5ARequiredScenePaths[i]);
+                if (addedPaths.Add(requiredPath))
+                {
+                    updatedScenes.Add(new EditorBuildSettingsScene(requiredPath, true));
+                }
+            }
+
+            for (int i = 0; i < existingScenes.Length; i++)
+            {
+                EditorBuildSettingsScene existingScene = existingScenes[i];
+                string normalizedPath = NormalizeScenePath(existingScene.path);
+                if (string.IsNullOrEmpty(normalizedPath) || !addedPaths.Add(normalizedPath))
+                {
+                    continue;
+                }
+
+                updatedScenes.Add(new EditorBuildSettingsScene(normalizedPath, existingScene.enabled));
+            }
+
+            EditorBuildSettings.scenes = updatedScenes.ToArray();
+            AssetDatabase.SaveAssets();
+
+            if (logToConsole)
+            {
+                UnityEngine.Debug.Log("[PortalNights][SceneMigration] Registered generated scenes in Build Settings. Scene count=" + updatedScenes.Count + ", first=" + updatedScenes[0].path);
+            }
+        }
+
+        private static Phase5AValidationResult ValidateBuildSettingsAndAdditiveSceneLoadingInternal(bool logToConsole)
+        {
+            Phase5AValidationResult result = new Phase5AValidationResult();
+
+            try
+            {
+                Scene sourceScene = OpenSourceScene();
+                result.SourceSceneOpenedForValidation = sourceScene.IsValid() && string.Equals(NormalizeScenePath(sourceScene.path), NormalizeScenePath(SourceScenePath), StringComparison.OrdinalIgnoreCase);
+
+                PopulateBuildSettingsValidation(result);
+                result.CoreValidation = ValidateCoreSceneAdditively();
+
+                for (int i = 0; i < Phase5APlanetPlans.Length; i++)
+                {
+                    result.PlanetValidations.Add(ValidatePlanetSceneAdditively(Phase5APlanetPlans[i]));
+                }
+
+                result.Success =
+                    result.SourceSceneOpenedForValidation
+                    && result.PortalNightsArenaIsFirstEnabledScene
+                    && result.CoreSceneRegistered
+                    && result.AllPlanetScenesRegistered
+                    && result.DuplicateScenePaths.Count == 0
+                    && result.MissingSceneAssets.Count == 0
+                    && result.MissingBuildSettingsRegistrations.Count == 0
+                    && result.CoreValidation != null
+                    && result.CoreValidation.Success
+                    && AllPhase5APlanetValidationsSucceeded(result.PlanetValidations);
+            }
+            catch (Exception exception)
+            {
+                result.Error = exception.Message;
+            }
+            finally
+            {
+                ReopenSourceScene();
+                Scene reopenedScene = SceneManager.GetActiveScene();
+                result.SourceSceneReopenedAtEnd = reopenedScene.IsValid()
+                    && string.Equals(NormalizeScenePath(reopenedScene.path), NormalizeScenePath(SourceScenePath), StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (logToConsole)
+            {
+                UnityEngine.Debug.Log("[PortalNights][SceneMigration] Phase 5A validation: " + result.ToLogLine());
+            }
+
+            return result;
+        }
+
+        private static void PopulateBuildSettingsValidation(Phase5AValidationResult result)
+        {
+            EditorBuildSettingsScene[] scenes = EditorBuildSettings.scenes ?? Array.Empty<EditorBuildSettingsScene>();
+            HashSet<string> requiredPaths = new HashSet<string>(Phase5ARequiredScenePaths.Length, StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < Phase5ARequiredScenePaths.Length; i++)
+            {
+                requiredPaths.Add(NormalizeScenePath(Phase5ARequiredScenePaths[i]));
+            }
+
+            Dictionary<string, int> duplicateCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < scenes.Length; i++)
+            {
+                EditorBuildSettingsScene scene = scenes[i];
+                string normalizedPath = NormalizeScenePath(scene.path);
+                result.BuildSettingsScenes.Add(new Phase5ABuildSceneEntry
+                {
+                    Index = i,
+                    Path = normalizedPath,
+                    Enabled = scene.enabled
+                });
+
+                if (string.IsNullOrEmpty(normalizedPath))
+                {
+                    continue;
+                }
+
+                if (duplicateCounts.TryGetValue(normalizedPath, out int count))
+                {
+                    duplicateCounts[normalizedPath] = count + 1;
+                }
+                else
+                {
+                    duplicateCounts.Add(normalizedPath, 1);
+                }
+
+                if (!File.Exists(normalizedPath))
+                {
+                    result.MissingSceneAssets.Add(normalizedPath);
+                }
+            }
+
+            foreach (KeyValuePair<string, int> duplicate in duplicateCounts)
+            {
+                if (duplicate.Value > 1)
+                {
+                    result.DuplicateScenePaths.Add(duplicate.Key);
+                }
+            }
+
+            result.PortalNightsArenaIsFirstEnabledScene = false;
+            for (int i = 0; i < result.BuildSettingsScenes.Count; i++)
+            {
+                Phase5ABuildSceneEntry scene = result.BuildSettingsScenes[i];
+                if (!scene.Enabled)
+                {
+                    continue;
+                }
+
+                result.PortalNightsArenaIsFirstEnabledScene = string.Equals(scene.Path, NormalizeScenePath(SourceScenePath), StringComparison.OrdinalIgnoreCase);
+                break;
+            }
+
+            result.CoreSceneRegistered = BuildSettingsContainsScene(result.BuildSettingsScenes, CoreScenePath, true);
+
+            result.AllPlanetScenesRegistered = true;
+            for (int i = 0; i < Phase5APlanetPlans.Length; i++)
+            {
+                Phase5APlanetValidationPlan plan = Phase5APlanetPlans[i];
+                bool isRegistered = BuildSettingsContainsScene(result.BuildSettingsScenes, plan.ScenePath, true);
+                result.RegisteredPlanetScenePaths.Add(plan.ScenePath);
+                if (!isRegistered)
+                {
+                    result.AllPlanetScenesRegistered = false;
+                    result.MissingBuildSettingsRegistrations.Add(plan.ScenePath);
+                }
+            }
+
+            if (!result.CoreSceneRegistered)
+            {
+                result.MissingBuildSettingsRegistrations.Add(CoreScenePath);
+            }
+        }
+
+        private static Phase5ACoreValidationResult ValidateCoreSceneAdditively()
+        {
+            Phase5ACoreValidationResult result = new Phase5ACoreValidationResult
+            {
+                ScenePath = CoreScenePath,
+                SceneName = Path.GetFileNameWithoutExtension(CoreScenePath)
+            };
+
+            Scene scene = default;
+            try
+            {
+                if (!File.Exists(CoreScenePath))
+                {
+                    result.Error = "Core scene file is missing.";
+                    return result;
+                }
+
+                scene = EditorSceneManager.OpenScene(CoreScenePath, OpenSceneMode.Additive);
+                result.RootCount = scene.rootCount;
+                result.Metrics = CollectSceneMetrics(scene);
+                result.NetworkObjectCount = result.Metrics.NetworkObjectCount;
+
+                result.HasNetworkManager = SceneContainsObjectNamed(scene, "NetworkManager");
+                result.HasGameController = SceneContainsObjectNamed(scene, "PN_GameController");
+                result.HasHudCanvas = SceneContainsObjectNamed(scene, "PN_HUD_Canvas");
+                result.HasEventSystem = SceneContainsObjectNamed(scene, "EventSystem");
+                result.HasMainCamera = SceneContainsObjectNamed(scene, "Main Camera");
+                result.HasArenaRoot = FindTopLevelRootObject(scene, "PortalNightsArena") != null;
+                result.HasPlanet1Core = SceneContainsObjectNamed(scene, "PN_Central_Core");
+                result.HasBuildPads = SceneContainsObjectNamed(scene, "PN_BuildPads");
+                result.PlayerSpawnCount = CountNamedObjectsInScene(scene, "PN_PlayerSpawn_");
+                result.ForbiddenFutureRoots = FindForbiddenTopLevelObjects(scene, FuturePlanetRootNames);
+                result.ForbiddenPlanet1Objects = FindForbiddenTopLevelObjects(scene, CombineNames(Planet1ArenaChildNames, Planet1TopLevelNames));
+
+                result.Success =
+                    result.HasNetworkManager
+                    && result.HasGameController
+                    && result.HasHudCanvas
+                    && result.HasEventSystem
+                    && result.HasMainCamera
+                    && !result.HasArenaRoot
+                    && !result.HasPlanet1Core
+                    && !result.HasBuildPads
+                    && result.PlayerSpawnCount == 0
+                    && result.ForbiddenFutureRoots.Count == 0
+                    && result.ForbiddenPlanet1Objects.Count == 0;
+            }
+            catch (Exception exception)
+            {
+                result.Error = exception.Message;
+            }
+            finally
+            {
+                CloseSceneIfLoaded(scene);
+            }
+
+            return result;
+        }
+
+        private static Phase5APlanetValidationEntry ValidatePlanetSceneAdditively(Phase5APlanetValidationPlan plan)
+        {
+            Phase5APlanetValidationEntry result = new Phase5APlanetValidationEntry
+            {
+                PlanetIndex = plan.PlanetIndex,
+                SceneName = plan.SceneName,
+                ScenePath = plan.ScenePath,
+                ExpectedRootName = plan.ExpectedRootName
+            };
+
+            Scene scene = default;
+            try
+            {
+                if (!File.Exists(plan.ScenePath))
+                {
+                    result.Error = "Scene file is missing.";
+                    return result;
+                }
+
+                scene = EditorSceneManager.OpenScene(plan.ScenePath, OpenSceneMode.Additive);
+                result.RootCount = scene.rootCount;
+                result.SceneRootCount = CountPlanetSceneRoots(scene);
+                result.Metrics = CollectSceneMetrics(scene);
+                result.NetworkObjectCount = result.Metrics.NetworkObjectCount;
+                result.ContainsArenaRoot = FindTopLevelRootObject(scene, "PortalNightsArena") != null;
+                result.ForbiddenGlobalObjects.AddRange(FindForbiddenTopLevelObjects(scene, CoreRequiredRootNames));
+                result.HasPlayerController = SceneContainsPlayerController(scene);
+
+                GameObject[] roots = scene.GetRootGameObjects();
+                for (int i = 0; i < roots.Length; i++)
+                {
+                    if (roots[i] != null && string.Equals(roots[i].name, plan.ExpectedRootName, StringComparison.Ordinal))
+                    {
+                        result.ExpectedRootCount++;
+                        if (result.ExpectedRoot == null)
+                        {
+                            result.ExpectedRoot = roots[i];
+                        }
+                    }
+                }
+
+                result.HasExpectedRoot = result.ExpectedRoot != null;
+                result.RootActive = result.ExpectedRoot != null && result.ExpectedRoot.activeSelf;
+
+                PortalNightsPlanetSceneRoot sceneRoot = result.ExpectedRoot == null ? null : result.ExpectedRoot.GetComponent<PortalNightsPlanetSceneRoot>();
+                result.HasPlanetSceneRoot = sceneRoot != null;
+                if (sceneRoot != null)
+                {
+                    result.PlanetIndexMatches = sceneRoot.PlanetIndex == plan.PlanetIndex;
+                    result.ValidateSetupPassed = sceneRoot.ValidateSetup(true);
+                }
+
+                result.Success =
+                    result.HasExpectedRoot
+                    && result.ExpectedRootCount == 1
+                    && result.RootActive
+                    && result.HasPlanetSceneRoot
+                    && result.SceneRootCount == 1
+                    && result.PlanetIndexMatches
+                    && result.ValidateSetupPassed
+                    && !result.ContainsArenaRoot
+                    && !result.HasPlayerController
+                    && result.ForbiddenGlobalObjects.Count == 0;
+            }
+            catch (Exception exception)
+            {
+                result.Error = exception.Message;
+            }
+            finally
+            {
+                CloseSceneIfLoaded(scene);
+                result.ExpectedRoot = null;
+            }
+
+            return result;
+        }
+
+        private static bool AllPhase5APlanetValidationsSucceeded(List<Phase5APlanetValidationEntry> validations)
+        {
+            if (validations == null || validations.Count != Phase5APlanetPlans.Length)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < validations.Count; i++)
+            {
+                if (validations[i] == null || !validations[i].Success)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool BuildSettingsContainsScene(List<Phase5ABuildSceneEntry> scenes, string scenePath, bool enabledOnly)
+        {
+            string normalizedPath = NormalizeScenePath(scenePath);
+            for (int i = 0; i < scenes.Count; i++)
+            {
+                Phase5ABuildSceneEntry entry = scenes[i];
+                if (string.Equals(entry.Path, normalizedPath, StringComparison.OrdinalIgnoreCase) && (!enabledOnly || entry.Enabled))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string NormalizeScenePath(string scenePath)
+        {
+            return string.IsNullOrEmpty(scenePath)
+                ? string.Empty
+                : scenePath.Replace('\\', '/');
+        }
+
+        private static void CloseSceneIfLoaded(Scene scene)
+        {
+            if (scene.IsValid() && scene.isLoaded)
+            {
+                EditorSceneManager.CloseScene(scene, true);
             }
         }
 
@@ -1545,6 +1976,58 @@ namespace PortalNights.EditorTools
             AssetDatabase.SaveAssets();
         }
 
+        private static void WritePhase5AReport()
+        {
+            EnsurePhase4OutputFolders();
+            StringBuilder report = new StringBuilder();
+            report.AppendLine("# Scene Migration Phase 5A Report");
+            report.AppendLine();
+            report.AppendLine("This report documents Phase 5A: Build Settings registration for generated scenes and editor-only additive validation, without wiring runtime gameplay to the new scene flow yet.");
+            report.AppendLine();
+            report.AppendLine("## Build Settings Final Scene List");
+            report.AppendLine();
+            AppendPhase5ABuildSettingsSection(report, lastPhase5AValidationResult);
+
+            report.AppendLine();
+            report.AppendLine("## Additive Editor Validation");
+            report.AppendLine();
+            AppendPhase5AValidationSection(report, lastPhase5AValidationResult);
+
+            report.AppendLine();
+            report.AppendLine("## Safety Confirmations");
+            report.AppendLine();
+            report.AppendLine("- `PortalNightsArena.unity` remains first enabled scene in Build Settings: " + ToYesNo(lastPhase5AValidationResult != null && lastPhase5AValidationResult.PortalNightsArenaIsFirstEnabledScene));
+            report.AppendLine("- Core and Planet1-P5 generated scenes are registered: " + ToYesNo(lastPhase5AValidationResult != null && lastPhase5AValidationResult.CoreSceneRegistered && lastPhase5AValidationResult.AllPlanetScenesRegistered));
+            report.AppendLine("- `PortalNightsGameController.cs` was not modified: yes");
+            report.AppendLine("- `PortalNightsArena.unity` was not modified: yes");
+            report.AppendLine("- Current one-scene gameplay path remains unchanged: yes");
+            report.AppendLine("- Gameplay is still legacy one-scene: yes");
+            report.AppendLine("- No WebGL build was run: yes");
+            report.AppendLine("- No archives/zip/backups were created: yes");
+
+            report.AppendLine();
+            report.AppendLine("## Why Gameplay Is Still Legacy One-Scene");
+            report.AppendLine();
+            report.AppendLine("Phase 5A only registers scenes and validates additive editor loading safety. It intentionally does not replace the current `PortalNightsArena.unity` runtime path, does not change startup flow, and does not call gameplay code from the transition manager yet.");
+
+            report.AppendLine();
+            report.AppendLine("## Recommended Phase 5B");
+            report.AppendLine();
+            report.AppendLine("Experimental scene-mode bootstrap for Core + Planet1 only, behind a disabled-by-default toggle.");
+
+            report.AppendLine();
+            report.AppendLine("## Git Checks");
+            report.AppendLine();
+            AppendGitCheck(report, "git status -sb", "status -sb");
+            AppendGitCheck(report, "git diff --name-only -- Assets/PortalNights/Scenes/PortalNightsArena.unity", "diff --name-only -- Assets/PortalNights/Scenes/PortalNightsArena.unity");
+            AppendGitCheck(report, "git diff --name-only -- Assets/PortalNights/Scripts/PortalNightsGameController.cs", "diff --name-only -- Assets/PortalNights/Scripts/PortalNightsGameController.cs");
+            AppendGitCheck(report, "git diff --name-only -- ProjectSettings/EditorBuildSettings.asset", "diff --name-only -- ProjectSettings/EditorBuildSettings.asset");
+
+            File.WriteAllText(Phase5AReportPath, report.ToString(), Encoding.UTF8);
+            AssetDatabase.ImportAsset(Phase5AReportPath);
+            AssetDatabase.SaveAssets();
+        }
+
         private static void AppendDryRunSection(StringBuilder report, List<DryRunResult> results)
         {
             if (results == null || results.Count == 0)
@@ -1799,6 +2282,121 @@ namespace PortalNights.EditorTools
             report.AppendLine("- Forbidden core/global objects: " + JoinOrNone(result.ForbiddenGlobalObjects));
             report.AppendLine("- Forbidden future planet roots: " + JoinOrNone(result.ForbiddenFutureRoots));
             report.AppendLine("- NetworkObject count: " + result.NetworkObjectCount);
+            AppendMetrics(report, result.Metrics);
+            if (!string.IsNullOrEmpty(result.Error))
+            {
+                report.AppendLine("- Error: " + result.Error);
+            }
+
+            report.AppendLine();
+        }
+
+        private static void AppendPhase5ABuildSettingsSection(StringBuilder report, Phase5AValidationResult result)
+        {
+            if (result == null)
+            {
+                report.AppendLine("No Phase 5A validation has been recorded yet.");
+                return;
+            }
+
+            report.AppendLine("- `PortalNightsArena.unity` first enabled scene: " + ToYesNo(result.PortalNightsArenaIsFirstEnabledScene));
+            report.AppendLine("- Core scene registered: " + ToYesNo(result.CoreSceneRegistered));
+            report.AppendLine("- Planet scenes registered: " + ToYesNo(result.AllPlanetScenesRegistered));
+            report.AppendLine("- Duplicate scene paths: " + JoinOrNone(result.DuplicateScenePaths));
+            report.AppendLine("- Missing scene assets: " + JoinOrNone(result.MissingSceneAssets));
+            report.AppendLine("- Missing Build Settings registrations: " + JoinOrNone(result.MissingBuildSettingsRegistrations));
+            report.AppendLine();
+
+            for (int i = 0; i < result.BuildSettingsScenes.Count; i++)
+            {
+                Phase5ABuildSceneEntry entry = result.BuildSettingsScenes[i];
+                report.AppendLine((i + 1) + ". `" + entry.Path + "` (" + (entry.Enabled ? "enabled" : "disabled") + ")");
+            }
+        }
+
+        private static void AppendPhase5AValidationSection(StringBuilder report, Phase5AValidationResult result)
+        {
+            if (result == null)
+            {
+                report.AppendLine("No Phase 5A validation has been recorded yet.");
+                return;
+            }
+
+            report.AppendLine("- Overall validation success: " + ToYesNo(result.Success));
+            report.AppendLine("- Source scene opened for validation: " + ToYesNo(result.SourceSceneOpenedForValidation));
+            report.AppendLine("- Source scene reopened at end: " + ToYesNo(result.SourceSceneReopenedAtEnd));
+            if (!string.IsNullOrEmpty(result.Error))
+            {
+                report.AppendLine("- Error: " + result.Error);
+            }
+
+            report.AppendLine();
+            report.AppendLine("### Core Scene");
+            report.AppendLine();
+            AppendPhase5ACoreValidationSection(report, result.CoreValidation);
+
+            report.AppendLine();
+            report.AppendLine("### Planet Scenes");
+            report.AppendLine();
+            for (int i = 0; i < result.PlanetValidations.Count; i++)
+            {
+                AppendPhase5APlanetValidationEntry(report, result.PlanetValidations[i]);
+            }
+        }
+
+        private static void AppendPhase5ACoreValidationSection(StringBuilder report, Phase5ACoreValidationResult result)
+        {
+            if (result == null)
+            {
+                report.AppendLine("No additive Core validation has been recorded yet.");
+                return;
+            }
+
+            report.AppendLine("- Scene path: `" + result.ScenePath + "`");
+            report.AppendLine("- Validation success: " + ToYesNo(result.Success));
+            report.AppendLine("- Root count: " + result.RootCount);
+            report.AppendLine("- Contains NetworkManager: " + ToYesNo(result.HasNetworkManager));
+            report.AppendLine("- Contains PN_GameController: " + ToYesNo(result.HasGameController));
+            report.AppendLine("- Contains PN_HUD_Canvas: " + ToYesNo(result.HasHudCanvas));
+            report.AppendLine("- Contains EventSystem: " + ToYesNo(result.HasEventSystem));
+            report.AppendLine("- Contains Main Camera: " + ToYesNo(result.HasMainCamera));
+            report.AppendLine("- Contains PortalNightsArena root: " + ToYesNo(result.HasArenaRoot));
+            report.AppendLine("- Contains PN_Central_Core: " + ToYesNo(result.HasPlanet1Core));
+            report.AppendLine("- Contains PN_BuildPads: " + ToYesNo(result.HasBuildPads));
+            report.AppendLine("- PN_PlayerSpawn_* count: " + result.PlayerSpawnCount);
+            report.AppendLine("- Forbidden future roots: " + JoinOrNone(result.ForbiddenFutureRoots));
+            report.AppendLine("- Forbidden Planet 1 objects: " + JoinOrNone(result.ForbiddenPlanet1Objects));
+            AppendMetrics(report, result.Metrics);
+            if (!string.IsNullOrEmpty(result.Error))
+            {
+                report.AppendLine("- Error: " + result.Error);
+            }
+        }
+
+        private static void AppendPhase5APlanetValidationEntry(StringBuilder report, Phase5APlanetValidationEntry result)
+        {
+            if (result == null)
+            {
+                report.AppendLine("- Missing planet validation entry.");
+                return;
+            }
+
+            report.AppendLine("#### Planet " + result.PlanetIndex + " — `" + result.SceneName + "`");
+            report.AppendLine();
+            report.AppendLine("- Scene path: `" + result.ScenePath + "`");
+            report.AppendLine("- Validation success: " + ToYesNo(result.Success));
+            report.AppendLine("- Root count: " + result.RootCount);
+            report.AppendLine("- Expected root name: `" + result.ExpectedRootName + "`");
+            report.AppendLine("- Expected root found: " + ToYesNo(result.HasExpectedRoot));
+            report.AppendLine("- Expected root count: " + result.ExpectedRootCount);
+            report.AppendLine("- Root active: " + ToYesNo(result.RootActive));
+            report.AppendLine("- `PortalNightsPlanetSceneRoot` count in scene: " + result.SceneRootCount);
+            report.AppendLine("- Has `PortalNightsPlanetSceneRoot` on expected root: " + ToYesNo(result.HasPlanetSceneRoot));
+            report.AppendLine("- planetIndex matches: " + ToYesNo(result.PlanetIndexMatches));
+            report.AppendLine("- `ValidateSetup(true)` passed: " + ToYesNo(result.ValidateSetupPassed));
+            report.AppendLine("- Contains `PortalNightsArena` root: " + ToYesNo(result.ContainsArenaRoot));
+            report.AppendLine("- Contains player controller: " + ToYesNo(result.HasPlayerController));
+            report.AppendLine("- Forbidden global objects: " + JoinOrNone(result.ForbiddenGlobalObjects));
             AppendMetrics(report, result.Metrics);
             if (!string.IsNullOrEmpty(result.Error))
             {
@@ -2118,6 +2716,100 @@ namespace PortalNights.EditorTools
                     ? "validated, playerSpawns=" + PlayerSpawnCount + ", networkObjects=" + NetworkObjectCount + ", objects=" + Metrics.ObjectCount
                     : "failed (" + (string.IsNullOrEmpty(Error) ? "validation mismatch" : Error) + ")";
             }
+        }
+
+        private sealed class Phase5APlanetValidationPlan
+        {
+            public Phase5APlanetValidationPlan(int planetIndex, string sceneName, string scenePath, string expectedRootName)
+            {
+                PlanetIndex = planetIndex;
+                SceneName = sceneName;
+                ScenePath = scenePath;
+                ExpectedRootName = expectedRootName;
+            }
+
+            public int PlanetIndex { get; }
+            public string SceneName { get; }
+            public string ScenePath { get; }
+            public string ExpectedRootName { get; }
+        }
+
+        private sealed class Phase5ABuildSceneEntry
+        {
+            public int Index;
+            public string Path;
+            public bool Enabled;
+        }
+
+        private sealed class Phase5AValidationResult
+        {
+            public bool Success;
+            public bool SourceSceneOpenedForValidation;
+            public bool SourceSceneReopenedAtEnd;
+            public bool PortalNightsArenaIsFirstEnabledScene;
+            public bool CoreSceneRegistered;
+            public bool AllPlanetScenesRegistered;
+            public readonly List<Phase5ABuildSceneEntry> BuildSettingsScenes = new List<Phase5ABuildSceneEntry>();
+            public readonly List<string> DuplicateScenePaths = new List<string>();
+            public readonly List<string> MissingSceneAssets = new List<string>();
+            public readonly List<string> MissingBuildSettingsRegistrations = new List<string>();
+            public readonly List<string> RegisteredPlanetScenePaths = new List<string>();
+            public Phase5ACoreValidationResult CoreValidation;
+            public readonly List<Phase5APlanetValidationEntry> PlanetValidations = new List<Phase5APlanetValidationEntry>();
+            public string Error;
+
+            public string ToLogLine()
+            {
+                return Success
+                    ? "success, buildScenes=" + BuildSettingsScenes.Count + ", planets=" + PlanetValidations.Count
+                    : "failed (" + (string.IsNullOrEmpty(Error) ? "validation mismatch" : Error) + ")";
+            }
+        }
+
+        private sealed class Phase5ACoreValidationResult
+        {
+            public string ScenePath;
+            public string SceneName;
+            public bool Success;
+            public int RootCount;
+            public bool HasNetworkManager;
+            public bool HasGameController;
+            public bool HasHudCanvas;
+            public bool HasEventSystem;
+            public bool HasMainCamera;
+            public bool HasArenaRoot;
+            public bool HasPlanet1Core;
+            public bool HasBuildPads;
+            public int PlayerSpawnCount;
+            public int NetworkObjectCount;
+            public SceneMetrics Metrics;
+            public List<string> ForbiddenFutureRoots = new List<string>();
+            public List<string> ForbiddenPlanet1Objects = new List<string>();
+            public string Error;
+        }
+
+        private sealed class Phase5APlanetValidationEntry
+        {
+            public int PlanetIndex;
+            public string SceneName;
+            public string ScenePath;
+            public string ExpectedRootName;
+            public bool Success;
+            public int RootCount;
+            public int SceneRootCount;
+            public bool HasExpectedRoot;
+            public int ExpectedRootCount;
+            public bool RootActive;
+            public bool HasPlanetSceneRoot;
+            public bool PlanetIndexMatches;
+            public bool ValidateSetupPassed;
+            public bool ContainsArenaRoot;
+            public bool HasPlayerController;
+            public int NetworkObjectCount;
+            public SceneMetrics Metrics;
+            public GameObject ExpectedRoot;
+            public readonly List<string> ForbiddenGlobalObjects = new List<string>();
+            public string Error;
         }
     }
 }
