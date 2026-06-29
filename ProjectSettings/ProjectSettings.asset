@@ -808,7 +808,7 @@ PlayerSettings:
   webGLDebugSymbols: 0
   webGLEmscriptenArgs: 
   webGLModulesDirectory: 
-  webGLTemplate: APPLICATION:Default
+  webGLTemplate: PROJECT:YandexGames
   webGLAnalyzeBuildSize: 0
   webGLUseEmbeddedResources: 0
   webGLCompressionFormat: 0
@@ -829,22 +829,24 @@ PlayerSettings:
   webWasm2023: 0
   webEnableSubmoduleStrippingCompatibility: 0
   scriptingDefineSymbols:
-    Android: UNITY_POST_PROCESSING_STACK_V2
+    Android: UNITY_POST_PROCESSING_STACK_V2;PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2
     EmbeddedLinux: UNITY_POST_PROCESSING_STACK_V2
     GameCoreScarlett: UNITY_POST_PROCESSING_STACK_V2
     GameCoreXboxOne: UNITY_POST_PROCESSING_STACK_V2
     Kepler: UNITY_POST_PROCESSING_STACK_V2
-    LinuxHeadlessSimulation: UNITY_POST_PROCESSING_STACK_V2
-    Nintendo Switch: UNITY_POST_PROCESSING_STACK_V2
+    LinuxHeadlessSimulation: UNITY_POST_PROCESSING_STACK_V2;PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2
+    Nintendo Switch: UNITY_POST_PROCESSING_STACK_V2;PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2
     Nintendo Switch 2: UNITY_POST_PROCESSING_STACK_V2
-    PS4: UNITY_POST_PROCESSING_STACK_V2
-    PS5: UNITY_POST_PROCESSING_STACK_V2
+    PS4: UNITY_POST_PROCESSING_STACK_V2;PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2
+    PS5: UNITY_POST_PROCESSING_STACK_V2;PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2
     QNX: UNITY_POST_PROCESSING_STACK_V2
-    Standalone: STARTER_ASSETS_PACKAGES_CHECKED;UNITY_POST_PROCESSING_STACK_V2
+    Standalone: STARTER_ASSETS_PACKAGES_CHECKED;UNITY_POST_PROCESSING_STACK_V2;PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2
     VisionOS: UNITY_POST_PROCESSING_STACK_V2
-    WebGL: UNITY_POST_PROCESSING_STACK_V2
-    XboxOne: UNITY_POST_PROCESSING_STACK_V2
-    tvOS: UNITY_POST_PROCESSING_STACK_V2
+    WebGL: UNITY_POST_PROCESSING_STACK_V2;PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2
+    Windows Store Apps: PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2
+    XboxOne: UNITY_POST_PROCESSING_STACK_V2;PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2
+    iPhone: PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2
+    tvOS: UNITY_POST_PROCESSING_STACK_V2;PLUGIN_YG_2;YandexGamesPlatform_yg;TMP_YG2;NJSON_YG2
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend:

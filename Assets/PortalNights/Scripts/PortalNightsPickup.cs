@@ -10,9 +10,11 @@ namespace PortalNights
         [SerializeField] private float collectRadius = 1.65f;
         [SerializeField] private float bobHeight = 0.18f;
         [SerializeField] private float rotationSpeed = 135f;
+        [SerializeField] private float collectionCheckInterval = 0.15f;
 
         private Vector3 startPosition;
         private bool collected;
+        private float collectionCheckTimer;
 
         public void Configure(PortalNightsPickupKind pickupKind, int coins)
         {
@@ -43,6 +45,13 @@ namespace PortalNights
                 return;
             }
 
+            collectionCheckTimer -= Time.deltaTime;
+            if (collectionCheckTimer > 0f)
+            {
+                return;
+            }
+
+            collectionCheckTimer = Mathf.Max(0.12f, collectionCheckInterval);
             PortalNightsPlayerController player = PortalNightsGameController.Instance == null
                 ? null
                 : PortalNightsGameController.Instance.GetClosestLivingPlayer(transform.position, collectRadius);

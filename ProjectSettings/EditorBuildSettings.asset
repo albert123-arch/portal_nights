@@ -9,6 +9,24 @@ EditorBuildSettings:
     path: Assets/PortalNights/Scenes/PortalNightsArena.unity
     guid: a50fba784a104ba4795c5ff8211ceb61
   - enabled: 1
+    path: Assets/PortalNights/Scenes/Core/PortalNightsCore.unity
+    guid: 87f3af6faa2845049984a26690365372
+  - enabled: 1
+    path: Assets/PortalNights/Scenes/Planets/PortalNightsPlanet1_Defense.unity
+    guid: ebb126d5eabf6a04ab94bbd76a95276c
+  - enabled: 1
+    path: Assets/PortalNights/Scenes/Planets/PortalNightsPlanet2_CrystalMoon.unity
+    guid: 0eb9953db4743ad419ac77800d8ba1cb
+  - enabled: 1
+    path: Assets/PortalNights/Scenes/Planets/PortalNightsPlanet3_AshRelayStation.unity
+    guid: d38898305d65bdd4c971f5cf4973f6ae
+  - enabled: 1
+    path: Assets/PortalNights/Scenes/Planets/PortalNightsPlanet4_SwarmExpanse.unity
+    guid: 8a2f71d4cb30cfb4da71174d1437dbb3
+  - enabled: 1
+    path: Assets/PortalNights/Scenes/Planets/PortalNightsPlanet5_CrimsonSingularity.unity
+    guid: 39c8e6ab7a60f394ebb45925c3e83374
+  - enabled: 1
     path: Assets/Core/TestScenes/[BB] Core.unity
     guid: 5492879da6a8a4759a6862bcc1e31e6e
   - enabled: 1

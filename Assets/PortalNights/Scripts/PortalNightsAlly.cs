@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using Unity.Netcode;
 using Unity.Netcode.Components;
@@ -24,6 +26,10 @@ namespace PortalNights
         [SerializeField] private float fireConeDegrees = 7f;
         [SerializeField] private float levelPopScale = 1.14f;
         [SerializeField] private bool barrelForwardIsNegativeZ = true;
+        [SerializeField] private bool spawnProjectileTracers = false;
+        [SerializeField] private bool spawnMuzzleBursts = true;
+        [SerializeField] private int muzzleBurstEveryNthShot = 3;
+        [SerializeField] private float targetScanInterval = 0.12f;
 
         private readonly NetworkVariable<int> level = new NetworkVariable<int>(
             1, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
@@ -32,11 +38,28 @@ namespace PortalNights
         private float visualPulse;
         private float visualAimHoldTimer;
         private Vector3 lastAimDirection = Vector3.forward;
+        private Coroutine beamRoutine;
+        private readonly List<LineRenderer> extraBeamPool = new List<LineRenderer>();
+        private PortalNightsEnemy cachedEnemyTarget;
+        private PortalNightsDamageTarget cachedDamageTarget;
+        private float targetScanTimer;
+        private int shotVisualCounter;
+        private static int turretShotsSinceLastSample;
+        private static long totalTurretShots;
 
         public int Level => Mathf.Clamp(level.Value, 1, 3);
         public float CurrentDamage => damage;
         public float CurrentRange => range;
         public float CurrentFireInterval => fireRate;
+
+        public static int ConsumeTurretShotCount()
+        {
+            int count = turretShotsSinceLastSample;
+            turretShotsSinceLastSample = 0;
+            return count;
+        }
+
+        public static long TotalTurretShots => totalTurretShots;
 
         private void Awake()
         {
@@ -47,6 +70,7 @@ namespace PortalNights
 
             RefreshLevelVisual();
             ApplyLevelStats(Level);
+            HideBeamVisuals();
         }
 
         public override void OnNetworkSpawn()
@@ -64,11 +88,19 @@ namespace PortalNights
         public override void OnNetworkDespawn()
         {
             level.OnValueChanged -= HandleLevelChanged;
+            StopBeamRoutine();
+            HideBeamVisuals();
 
             if (IsServer)
             {
                 PortalNightsGameController.Instance?.UnregisterAlly(this);
             }
+        }
+
+        private void OnDisable()
+        {
+            StopBeamRoutine();
+            HideBeamVisuals();
         }
 
         private void Update()
@@ -84,13 +116,29 @@ namespace PortalNights
         private void UpdateServerCombat()
         {
             fireTimer -= Time.deltaTime;
+            targetScanTimer -= Time.deltaTime;
             PortalNightsGameController controller = PortalNightsGameController.Instance;
-            PortalNightsEnemy target = controller == null ? null : controller.GetClosestEnemy(transform.position, range);
-            if (target == null || target.Health == null || target.Health.IsDead)
+            if (controller == null)
             {
                 return;
             }
 
+            if (!TryGetCachedTarget(controller, out PortalNightsDamageTarget damageTarget, out PortalNightsEnemy enemyTarget))
+            {
+                return;
+            }
+
+            if (damageTarget != null)
+            {
+                UpdateServerCombatTarget(controller, damageTarget);
+                return;
+            }
+
+            UpdateServerCombatEnemy(controller, enemyTarget);
+        }
+
+        private void UpdateServerCombatEnemy(PortalNightsGameController controller, PortalNightsEnemy target)
+        {
             Vector3 targetPoint = target.AimPoint;
             if (PortalNightsMath.TryFlatDirection(transform.position, targetPoint, out Vector3 direction))
             {
@@ -112,8 +160,39 @@ namespace PortalNights
 
             fireTimer = fireRate;
             AimVisual(lastAimDirection, true);
-            float damageMultiplier = PortalNightsGameController.Instance == null ? 1f : PortalNightsGameController.Instance.TurretDamageMultiplier;
+            float damageMultiplier = controller == null ? 1f : controller.TurretDamageMultiplier;
             target.Health.DamageServer(damage * damageMultiplier);
+            int muzzleCount = GetActiveMuzzleOrigins(out Vector3 originA, out Vector3 originB, out Vector3 originC);
+            FireClientRpc(originA, originB, originC, muzzleCount, targetPoint, Level);
+        }
+
+        private void UpdateServerCombatTarget(PortalNightsGameController controller, PortalNightsDamageTarget target)
+        {
+            Vector3 targetPoint = target.AimPoint;
+            if (PortalNightsMath.TryFlatDirection(transform.position, targetPoint, out Vector3 direction))
+            {
+                lastAimDirection = direction;
+                AimVisual(direction, false);
+            }
+
+            if (fireTimer > 0f)
+            {
+                return;
+            }
+
+            Transform head = rotatingHead == null ? transform : rotatingHead;
+            float angleToTarget = Vector3.Angle(GetBarrelForward(head), lastAimDirection);
+            if (angleToTarget > fireConeDegrees)
+            {
+                return;
+            }
+
+            fireTimer = fireRate;
+            AimVisual(lastAimDirection, true);
+            float damageMultiplier = controller == null ? 1f : controller.TurretDamageMultiplier;
+            float finalDamage = damage * damageMultiplier;
+            target.Health.DamageServer(finalDamage);
+            controller?.NotifyDamageTargetHitServer(target, finalDamage, false);
             int muzzleCount = GetActiveMuzzleOrigins(out Vector3 originA, out Vector3 originB, out Vector3 originC);
             FireClientRpc(originA, originB, originC, muzzleCount, targetPoint, Level);
         }
@@ -176,11 +255,21 @@ namespace PortalNights
 
             int count = Mathf.Clamp(muzzleCount, 1, 3);
             float projectileWidth = shotLevel >= 3 ? 0.115f : 0.075f;
-            for (int i = 0; i < count; i++)
+            turretShotsSinceLastSample++;
+            totalTurretShots++;
+            shotVisualCounter++;
+            if (spawnProjectileTracers)
             {
-                Vector3 origin = GetOriginByIndex(i, originA, originB, originC);
-                PortalNightsProjectile.Spawn(origin, targetPoint, color, projectileWidth);
-                PortalNightsVfx.SpawnBurst(origin, color, 0.48f + shotLevel * 0.12f, 8 + shotLevel * 4);
+                for (int i = 0; i < count; i++)
+                {
+                    Vector3 origin = GetOriginByIndex(i, originA, originB, originC);
+                    PortalNightsProjectile.Spawn(origin, targetPoint, color, projectileWidth);
+                }
+            }
+
+            if (spawnMuzzleBursts && shotVisualCounter % Mathf.Max(1, muzzleBurstEveryNthShot) == 0)
+            {
+                PortalNightsVfx.SpawnBurst(originA, color, 0.32f + shotLevel * 0.08f, 5 + shotLevel * 2);
             }
 
             visualPulse = 0.18f;
@@ -189,8 +278,9 @@ namespace PortalNights
             {
                 beam.startColor = color;
                 beam.endColor = new Color(color.r, color.g, color.b, 0.12f);
-                StopAllCoroutines();
-                StartCoroutine(ShowBeams(originA, originB, originC, count, targetPoint, color, projectileWidth));
+                StopBeamRoutine();
+                HideBeamVisuals();
+                beamRoutine = StartCoroutine(ShowBeams(originA, originB, originC, count, targetPoint, color, projectileWidth));
             }
         }
 
@@ -201,26 +291,73 @@ namespace PortalNights
             RefreshLevelVisual();
             visualPulse = 0.32f;
             PortalNightsVfx.SpawnBurst(position, GetLevelColor(newLevel), 0.95f + newLevel * 0.18f, 18 + newLevel * 6);
-            PortalNightsVfx.SpawnFloatingText(position + Vector3.up * 0.75f, "LVL " + newLevel, GetLevelColor(newLevel));
+            PortalNightsVfx.SpawnFloatingText(position + Vector3.up * 0.75f, PortalNightsLocalization.Format("toast.level", newLevel), GetLevelColor(newLevel));
         }
 
-        private System.Collections.IEnumerator ShowBeams(Vector3 originA, Vector3 originB, Vector3 originC, int muzzleCount, Vector3 targetPoint, Color color, float width)
+        private IEnumerator ShowBeams(Vector3 originA, Vector3 originB, Vector3 originC, int muzzleCount, Vector3 targetPoint, Color color, float width)
         {
             beam.enabled = true;
             beam.positionCount = 2;
             beam.SetPosition(0, originA);
             beam.SetPosition(1, targetPoint);
-            LineRenderer[] extraBeams = CreateExtraBeams(originB, originC, muzzleCount, targetPoint, color, width);
+            ShowExtraBeams(originB, originC, muzzleCount, targetPoint, color, width);
             yield return new WaitForSeconds(0.06f);
-            beam.enabled = false;
+            HideBeamVisuals();
+            beamRoutine = null;
+        }
 
-            for (int i = 0; i < extraBeams.Length; i++)
+        private bool TryGetCachedTarget(PortalNightsGameController controller, out PortalNightsDamageTarget damageTarget, out PortalNightsEnemy enemyTarget)
+        {
+            bool damageTargetValid = IsCachedDamageTargetValid(cachedDamageTarget);
+            bool enemyTargetValid = IsCachedEnemyTargetValid(cachedEnemyTarget);
+            if ((!damageTargetValid && !enemyTargetValid) || targetScanTimer <= 0f)
             {
-                if (extraBeams[i] != null)
-                {
-                    Destroy(extraBeams[i].gameObject);
-                }
+                RefreshCachedTarget(controller);
+                damageTargetValid = IsCachedDamageTargetValid(cachedDamageTarget);
+                enemyTargetValid = IsCachedEnemyTargetValid(cachedEnemyTarget);
             }
+
+            damageTarget = damageTargetValid ? cachedDamageTarget : null;
+            enemyTarget = damageTarget == null && enemyTargetValid ? cachedEnemyTarget : null;
+            return damageTarget != null || enemyTarget != null;
+        }
+
+        private void RefreshCachedTarget(PortalNightsGameController controller)
+        {
+            targetScanTimer = Mathf.Max(0.03f, targetScanInterval);
+            cachedDamageTarget = controller.GetClosestDamageTarget(transform.position, range);
+            if (IsCachedDamageTargetValid(cachedDamageTarget))
+            {
+                cachedEnemyTarget = null;
+                return;
+            }
+
+            cachedDamageTarget = null;
+            cachedEnemyTarget = controller.GetClosestEnemy(transform.position, range);
+            if (!IsCachedEnemyTargetValid(cachedEnemyTarget))
+            {
+                cachedEnemyTarget = null;
+            }
+        }
+
+        private bool IsCachedDamageTargetValid(PortalNightsDamageTarget target)
+        {
+            if (target == null || !target.IsTargetable || target.Health == null || target.Health.IsDead)
+            {
+                return false;
+            }
+
+            return PortalNightsMath.Flat(target.transform.position - transform.position).sqrMagnitude <= range * range;
+        }
+
+        private bool IsCachedEnemyTargetValid(PortalNightsEnemy target)
+        {
+            if (target == null || target.Health == null || target.Health.IsDead)
+            {
+                return false;
+            }
+
+            return PortalNightsMath.Flat(target.transform.position - transform.position).sqrMagnitude <= range * range;
         }
 
         private void HandleLevelChanged(int previous, int current)
@@ -390,30 +527,79 @@ namespace PortalNights
             return originA;
         }
 
-        private LineRenderer[] CreateExtraBeams(Vector3 originB, Vector3 originC, int muzzleCount, Vector3 targetPoint, Color color, float width)
+        private void StopBeamRoutine()
+        {
+            if (beamRoutine == null)
+            {
+                return;
+            }
+
+            StopCoroutine(beamRoutine);
+            beamRoutine = null;
+        }
+
+        private void HideBeamVisuals()
+        {
+            if (beam != null)
+            {
+                beam.enabled = false;
+            }
+
+            for (int i = 0; i < extraBeamPool.Count; i++)
+            {
+                LineRenderer line = extraBeamPool[i];
+                if (line == null)
+                {
+                    continue;
+                }
+
+                line.enabled = false;
+                line.gameObject.SetActive(false);
+            }
+        }
+
+        private void ShowExtraBeams(Vector3 originB, Vector3 originC, int muzzleCount, Vector3 targetPoint, Color color, float width)
         {
             int extraCount = Mathf.Clamp(muzzleCount, 1, 3) - 1;
             if (extraCount <= 0)
             {
-                return new LineRenderer[0];
+                return;
             }
 
-            LineRenderer[] extraBeams = new LineRenderer[extraCount];
+            EnsureExtraBeamPool(extraCount);
             for (int i = 0; i < extraCount; i++)
             {
-                GameObject beamObject = new GameObject("PN_Turret_ExtraBeam");
-                LineRenderer line = beamObject.AddComponent<LineRenderer>();
+                LineRenderer line = extraBeamPool[i];
+                if (line == null)
+                {
+                    continue;
+                }
+
+                line.gameObject.SetActive(true);
+                line.enabled = true;
                 line.positionCount = 2;
                 line.widthMultiplier = width;
-                line.material = beam.material;
+                line.sharedMaterial = beam == null ? null : beam.sharedMaterial;
                 line.startColor = color;
                 line.endColor = new Color(color.r, color.g, color.b, 0.08f);
                 line.SetPosition(0, i == 0 ? originB : originC);
                 line.SetPosition(1, targetPoint);
-                extraBeams[i] = line;
             }
+        }
 
-            return extraBeams;
+        private void EnsureExtraBeamPool(int neededCount)
+        {
+            while (extraBeamPool.Count < neededCount)
+            {
+                GameObject beamObject = new GameObject("PN_Turret_ExtraBeam");
+                beamObject.transform.SetParent(transform, false);
+                beamObject.SetActive(false);
+                LineRenderer line = beamObject.AddComponent<LineRenderer>();
+                line.useWorldSpace = true;
+                line.positionCount = 2;
+                line.enabled = false;
+                extraBeamPool.Add(line);
+            }
         }
 
         private static float GetArrayValue(float[] values, int index, float fallback)
