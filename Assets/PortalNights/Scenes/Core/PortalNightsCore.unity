@@ -423,6 +423,8 @@ MonoBehaviour:
   performanceDebug: 0
   debugObjectiveReminders: 0
   hardDisableInactivePlanetRoots: 1
+  experimentalSceneMode: 1
+  waitForExperimentalSceneBootstrap: 1
 --- !u!114 &133991222
 MonoBehaviour:
   m_ObjectHideFlags: 0

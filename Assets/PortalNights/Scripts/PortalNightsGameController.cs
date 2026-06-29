@@ -5,6 +5,7 @@ using Unity.Netcode;
 using Unity.Netcode.Components;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine.InputSystem;
+using PortalNights.Scenes;
 using PortalNights.Visuals;
 
 namespace PortalNights
@@ -90,6 +91,8 @@ namespace PortalNights
         [SerializeField] private bool performanceDebug;
         [SerializeField] private bool debugObjectiveReminders;
         [SerializeField] private bool hardDisableInactivePlanetRoots = true;
+        [SerializeField] private bool experimentalSceneMode;
+        [SerializeField] private bool waitForExperimentalSceneBootstrap;
 
         private readonly List<PortalNightsEnemy> enemies = new List<PortalNightsEnemy>();
         private readonly List<PortalNightsPlayerController> registeredPlayers = new List<PortalNightsPlayerController>();
@@ -219,6 +222,8 @@ namespace PortalNights
         private PortalNightsHealth planet5Helper2Health;
         private Transform planet5UniversePortal;
         private PortalNightsPlanet5Stabilizer planet5HoldStabilizer;
+        private PortalNightsPlanetSceneRoot experimentalPlanetSceneRoot;
+        private bool experimentalBootstrapWaitLogged;
         private ulong planet5StabilizerHoldClientId = ulong.MaxValue;
         private float planet5BossIntroTimer;
         private float planet5HealTimer;
@@ -444,6 +449,31 @@ namespace PortalNights
             {
                 coreHealth.Died -= HandleCoreDeath;
             }
+        }
+
+        public void RegisterExperimentalPlanetSceneRoot(PortalNightsPlanetSceneRoot root)
+        {
+            if (!experimentalSceneMode)
+            {
+                return;
+            }
+
+            if (root == null)
+            {
+                Debug.LogWarning("[PortalNights][ExperimentalSceneMode] Ignoring null planet scene root registration request.", this);
+                return;
+            }
+
+            if (root.PlanetIndex != 1)
+            {
+                Debug.LogWarning("[PortalNights][ExperimentalSceneMode] Phase 5C only supports Planet1 root binding. Received planet index " + root.PlanetIndex + ".", this);
+                return;
+            }
+
+            root.AutoDiscoverReferences();
+            experimentalPlanetSceneRoot = root;
+            experimentalBootstrapWaitLogged = false;
+            ApplyExperimentalPlanet1References(root);
         }
 
         private void Update()
@@ -1635,8 +1665,16 @@ namespace PortalNights
 
         private void InitializeServerState()
         {
+            if (ShouldWaitForExperimentalSceneBootstrap())
+            {
+                DebugExperimental("Initialization requested before Planet1 scene root registration completed. Deferring until bootstrap finishes.");
+                QueueExperimentalInitializationWaitIfNeeded();
+                return;
+            }
+
             initialized = true;
             CachePlanetRootReferencesOnly();
+            CacheSceneReferences();
             SetActivePlanetEnvironment(1);
             if (runState == null)
             {
@@ -1689,6 +1727,23 @@ namespace PortalNights
 
         private IEnumerator InitializeServerStateAfterSpawn()
         {
+            if (experimentalSceneMode && waitForExperimentalSceneBootstrap)
+            {
+                while (experimentalPlanetSceneRoot == null)
+                {
+                    if (!experimentalBootstrapWaitLogged)
+                    {
+                        DebugExperimental("Waiting for initial Planet1 scene root registration before server initialization.");
+                        experimentalBootstrapWaitLogged = true;
+                    }
+
+                    yield return null;
+                }
+
+                experimentalBootstrapWaitLogged = false;
+                ApplyExperimentalPlanet1References(experimentalPlanetSceneRoot);
+            }
+
             yield return null;
             InitializeServerState();
             initializeServerStateRoutine = null;
@@ -5458,6 +5513,11 @@ namespace PortalNights
         private void CacheSceneReferences()
         {
             CachePlanetRootReferencesOnly();
+            if (experimentalSceneMode && experimentalPlanetSceneRoot != null)
+            {
+                ApplyExperimentalPlanet1References(experimentalPlanetSceneRoot);
+            }
+
             if (coreHealth == null)
             {
                 coreHealth = FindFirstObjectByType<PortalNightsHealth>();
@@ -5466,6 +5526,11 @@ namespace PortalNights
             if (hud == null)
             {
                 hud = FindFirstObjectByType<PortalNightsHud>();
+            }
+
+            if (experimentalSceneMode && experimentalPlanetSceneRoot != null)
+            {
+                return;
             }
 
             if (leftLanePath == null || rightLanePath == null)
@@ -5503,9 +5568,112 @@ namespace PortalNights
                 }
             }
 
-            foreach (PortalNightsBuildPoint point in FindObjectsByType<PortalNightsBuildPoint>(FindObjectsSortMode.None))
+            if (buildPoints.Count > 0)
             {
-                point.MakeNonBlocking();
+                foreach (PortalNightsBuildPoint point in buildPoints)
+                {
+                    if (point != null)
+                    {
+                        point.MakeNonBlocking();
+                    }
+                }
+            }
+            else
+            {
+                foreach (PortalNightsBuildPoint point in FindObjectsByType<PortalNightsBuildPoint>(FindObjectsSortMode.None))
+                {
+                    point.MakeNonBlocking();
+                }
+            }
+        }
+
+        private bool ShouldWaitForExperimentalSceneBootstrap()
+        {
+            return experimentalSceneMode && waitForExperimentalSceneBootstrap && experimentalPlanetSceneRoot == null;
+        }
+
+        private void QueueExperimentalInitializationWaitIfNeeded()
+        {
+            if (!IsServer || initializeServerStateRoutine != null)
+            {
+                return;
+            }
+
+            initializeServerStateRoutine = StartCoroutine(InitializeServerStateAfterSpawn());
+        }
+
+        private void ApplyExperimentalPlanet1References(PortalNightsPlanetSceneRoot root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            PortalNightsHealth nextCoreHealth = root.CoreHealth != null ? root.CoreHealth : root.MainObjectiveHealth;
+            if (coreHealth != nextCoreHealth)
+            {
+                if (coreHealth != null)
+                {
+                    coreHealth.Died -= HandleCoreDeath;
+                }
+
+                coreHealth = nextCoreHealth;
+                if (coreHealth != null)
+                {
+                    coreHealth.Died -= HandleCoreDeath;
+                    coreHealth.Died += HandleCoreDeath;
+                }
+            }
+
+            Transform[] rootPlayerSpawns = root.PlayerSpawnPoints;
+            if (rootPlayerSpawns != null && rootPlayerSpawns.Length > 0)
+            {
+                playerSpawnPoints = rootPlayerSpawns;
+            }
+
+            if (root.PortalSpawn != null)
+            {
+                portalSpawn = root.PortalSpawn;
+            }
+
+            if (root.LeftLanePath != null)
+            {
+                leftLanePath = root.LeftLanePath;
+            }
+
+            if (root.RightLanePath != null)
+            {
+                rightLanePath = root.RightLanePath;
+            }
+
+            buildPoints.Clear();
+            PortalNightsBuildPoint[] rootBuildPoints = root.BuildPoints;
+            if (rootBuildPoints != null && rootBuildPoints.Length > 0)
+            {
+                buildPoints.AddRange(rootBuildPoints);
+            }
+
+            if (hud == null)
+            {
+                hud = FindFirstObjectByType<PortalNightsHud>();
+            }
+
+            MakeDefenseObjectsPlayerFriendly();
+            hud?.Bind(this);
+            DebugExperimental(
+                "Bound Planet1 scene root '" + root.name + "' with core=" + (coreHealth == null ? "null" : coreHealth.name)
+                + ", spawns=" + (playerSpawnPoints == null ? 0 : playerSpawnPoints.Length)
+                + ", buildPoints=" + buildPoints.Count
+                + ", leftLane=" + (leftLanePath == null ? "null" : leftLanePath.name)
+                + ", rightLane=" + (rightLanePath == null ? "null" : rightLanePath.name)
+                + ", portalSpawn=" + (portalSpawn == null ? "null" : portalSpawn.name) + ".");
+        }
+
+        private void DebugExperimental(string message)
+        {
+            if (experimentalSceneMode)
+            {
+                Debug.Log("[PortalNights][ExperimentalSceneMode] " + message, this);
             }
         }
 

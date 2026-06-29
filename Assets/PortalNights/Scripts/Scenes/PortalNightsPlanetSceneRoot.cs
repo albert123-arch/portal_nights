@@ -18,6 +18,10 @@ namespace PortalNights.Scenes
         [SerializeField] private Transform[] enemySpawnPoints;
         [SerializeField] private Transform[] objectiveMarkers;
         [SerializeField] private PortalNightsBuildPoint[] buildPoints;
+        [SerializeField] private PortalNightsHealth coreHealth;
+        [SerializeField] private Transform portalSpawn;
+        [SerializeField] private PortalNightsLanePath leftLanePath;
+        [SerializeField] private PortalNightsLanePath rightLanePath;
         [SerializeField] private PortalNightsStaffRescue[] staff;
         [SerializeField] private PortalNightsEnemyRift[] enemyRifts;
         [SerializeField] private PortalNightsPlanet4HiveRift[] hiveRifts;
@@ -35,6 +39,10 @@ namespace PortalNights.Scenes
         public Transform[] EnemySpawnPoints => enemySpawnPoints ?? Array.Empty<Transform>();
         public Transform[] ObjectiveMarkers => objectiveMarkers ?? Array.Empty<Transform>();
         public PortalNightsBuildPoint[] BuildPoints => buildPoints ?? Array.Empty<PortalNightsBuildPoint>();
+        public PortalNightsHealth CoreHealth => coreHealth;
+        public Transform PortalSpawn => portalSpawn;
+        public PortalNightsLanePath LeftLanePath => leftLanePath;
+        public PortalNightsLanePath RightLanePath => rightLanePath;
         public PortalNightsStaffRescue[] Staff => staff ?? Array.Empty<PortalNightsStaffRescue>();
         public PortalNightsEnemyRift[] EnemyRifts => enemyRifts ?? Array.Empty<PortalNightsEnemyRift>();
         public PortalNightsPlanet4HiveRift[] HiveRifts => hiveRifts ?? Array.Empty<PortalNightsPlanet4HiveRift>();
@@ -46,15 +54,28 @@ namespace PortalNights.Scenes
         public void AutoDiscoverReferences()
         {
             playerArrivalPoint = FindBestNamedTransform("PlayerArrivalPoint", "ArrivalPoint", "Arrival");
-            playerSpawnPoints = FilterNulls(FindTransformsContaining("PlayerSpawn", "PN_PlayerSpawn"));
+            playerSpawnPoints = FilterNulls(FindTransformsContaining("PN_PlayerSpawn_", "PlayerSpawn"));
             enemySpawnPoints = FilterNulls(FindEnemySpawnTransforms());
             objectiveMarkers = FilterNulls(FindObjectiveMarkerTransforms());
-            buildPoints = FilterNulls(GetComponentsInChildren<PortalNightsBuildPoint>(true));
+            buildPoints = FilterNulls(FindBuildPoints());
+            coreHealth = FindCoreHealth();
+            leftLanePath = FindLanePath(PortalNightsLane.Left, "LeftLane");
+            rightLanePath = FindLanePath(PortalNightsLane.Right, "RightLane");
+            portalSpawn = FindPortalSpawn();
             staff = FilterNulls(GetComponentsInChildren<PortalNightsStaffRescue>(true));
             enemyRifts = FilterNulls(GetComponentsInChildren<PortalNightsEnemyRift>(true));
             hiveRifts = FilterNulls(GetComponentsInChildren<PortalNightsPlanet4HiveRift>(true));
             stabilizers = FilterNulls(GetComponentsInChildren<PortalNightsPlanet5Stabilizer>(true));
             mainObjectiveHealth = FindMainObjectiveHealth();
+            if (mainObjectiveHealth == null)
+            {
+                mainObjectiveHealth = coreHealth;
+            }
+            else if (coreHealth == null && planetIndex == 1)
+            {
+                coreHealth = mainObjectiveHealth;
+            }
+
             exitPortal = FindBestNamedTransform("ExitPortal");
             universePortal = FindBestNamedTransform("UniversePortal");
 
@@ -112,6 +133,29 @@ namespace PortalNights.Scenes
             {
                 valid = false;
                 Warn(logWarnings, "Bounds could not be derived from serialized data or child geometry.");
+            }
+
+            if (planetIndex == 1)
+            {
+                if (coreHealth == null && mainObjectiveHealth == null)
+                {
+                    Warn(logWarnings, "Planet1 core health was not discovered under this root.");
+                }
+
+                if (portalSpawn == null)
+                {
+                    Warn(logWarnings, "Planet1 portal spawn was not discovered under this root. Legacy fallback spawn position will be used.");
+                }
+
+                if (leftLanePath == null)
+                {
+                    Warn(logWarnings, "Planet1 left lane path was not discovered under this root.");
+                }
+
+                if (rightLanePath == null)
+                {
+                    Warn(logWarnings, "Planet1 right lane path was not discovered under this root.");
+                }
             }
 
             return valid;
@@ -188,6 +232,10 @@ namespace PortalNights.Scenes
                 || EnemySpawnPoints.Length > 0
                 || ObjectiveMarkers.Length > 0
                 || BuildPoints.Length > 0
+                || coreHealth != null
+                || portalSpawn != null
+                || leftLanePath != null
+                || rightLanePath != null
                 || Staff.Length > 0
                 || EnemyRifts.Length > 0
                 || HiveRifts.Length > 0
@@ -239,7 +287,7 @@ namespace PortalNights.Scenes
                 return children.ToArray();
             }
 
-            return FindTransformsContaining("EnemySpawn", "Spawn_");
+            return FindTransformsContaining("EnemySpawn", "PortalSpawn", "RiftSpawn");
         }
 
         private Transform[] FindObjectiveMarkerTransforms()
@@ -323,6 +371,101 @@ namespace PortalNights.Scenes
                     {
                         return candidate;
                     }
+                }
+            }
+
+            return null;
+        }
+
+        private PortalNightsBuildPoint[] FindBuildPoints()
+        {
+            Transform buildPadRoot = FindBestNamedTransform("PN_BuildPads", "BuildPads");
+            if (buildPadRoot != null)
+            {
+                return buildPadRoot.GetComponentsInChildren<PortalNightsBuildPoint>(true);
+            }
+
+            return GetComponentsInChildren<PortalNightsBuildPoint>(true);
+        }
+
+        private PortalNightsHealth FindCoreHealth()
+        {
+            Transform centralCoreRoot = FindBestNamedTransform("PN_Central_Core", "Central_Core", "CentralCore", "Core");
+            if (centralCoreRoot != null)
+            {
+                PortalNightsHealth preferredCore = centralCoreRoot.GetComponentInChildren<PortalNightsHealth>(true);
+                if (preferredCore != null)
+                {
+                    return preferredCore;
+                }
+            }
+
+            PortalNightsHealth[] healths = GetComponentsInChildren<PortalNightsHealth>(true);
+            for (int i = 0; i < healths.Length; i++)
+            {
+                PortalNightsHealth candidate = healths[i];
+                if (candidate != null && candidate.name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+
+        private Transform FindPortalSpawn()
+        {
+            Transform directMatch = FindBestNamedTransform("PortalSpawn", "EnemyPortalSpawn", "EnemySpawn", "SpawnPoint");
+            if (directMatch != null)
+            {
+                return directMatch;
+            }
+
+            Transform portalArea = FindBestNamedTransform("PortalArea", "PN_Glowing_Portal");
+            if (portalArea != null)
+            {
+                Transform[] portalChildren = portalArea.GetComponentsInChildren<Transform>(true);
+                for (int i = 0; i < portalChildren.Length; i++)
+                {
+                    Transform candidate = portalChildren[i];
+                    if (candidate != null && candidate != portalArea && MatchesAny(candidate.name, new[] { "PortalSpawn", "EnemySpawn", "SpawnPoint" }))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+
+            Transform[] discoveredEnemySpawns = EnemySpawnPoints;
+            return discoveredEnemySpawns.Length > 0 ? discoveredEnemySpawns[0] : null;
+        }
+
+        private PortalNightsLanePath FindLanePath(PortalNightsLane expectedLane, params string[] preferredNameTerms)
+        {
+            PortalNightsLanePath[] lanePaths = GetComponentsInChildren<PortalNightsLanePath>(true);
+            for (int i = 0; i < lanePaths.Length; i++)
+            {
+                PortalNightsLanePath candidate = lanePaths[i];
+                if (candidate != null && candidate.Lane == expectedLane && MatchesAny(candidate.name, preferredNameTerms))
+                {
+                    return candidate;
+                }
+            }
+
+            for (int i = 0; i < lanePaths.Length; i++)
+            {
+                PortalNightsLanePath candidate = lanePaths[i];
+                if (candidate != null && MatchesAny(candidate.name, preferredNameTerms))
+                {
+                    return candidate;
+                }
+            }
+
+            for (int i = 0; i < lanePaths.Length; i++)
+            {
+                PortalNightsLanePath candidate = lanePaths[i];
+                if (candidate != null && candidate.Lane == expectedLane)
+                {
+                    return candidate;
                 }
             }
 

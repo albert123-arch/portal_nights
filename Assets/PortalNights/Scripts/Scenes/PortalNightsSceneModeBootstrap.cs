@@ -61,8 +61,17 @@ namespace PortalNights.Scenes
                 yield break;
             }
 
+            loadedInitialPlanetRoot.AutoDiscoverReferences();
+            loadedInitialPlanetRoot.ValidateSetup(true);
+            if (gameController == null)
+            {
+                Debug.LogWarning("[PortalNights][SceneModeBootstrap] Missing PortalNightsGameController. Experimental scene mode bootstrap cannot register the loaded Planet1 root.", this);
+                yield break;
+            }
+
+            gameController.RegisterExperimentalPlanetSceneRoot(loadedInitialPlanetRoot);
             hasBootstrapped = true;
-            DebugLog("Experimental scene mode bootstrap loaded planet root '" + loadedInitialPlanetRoot.name + "'. Gameplay remains on legacy logic until a future phase binds scene-root references.");
+            DebugLog("Experimental scene mode bootstrap loaded and registered planet root '" + loadedInitialPlanetRoot.name + "' without unloading the Core scene or rewiring future planets.");
         }
 
         private T ResolveReference<T>(T existing) where T : Component
