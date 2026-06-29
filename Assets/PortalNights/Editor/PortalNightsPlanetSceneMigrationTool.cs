@@ -17,7 +17,11 @@ namespace PortalNights.EditorTools
     {
         private const string SourceScenePath = "Assets/PortalNights/Scenes/PortalNightsArena.unity";
         private const string GeneratedScenesFolder = "Assets/PortalNights/Scenes/Planets";
-        private const string ReportPath = "Assets/PortalNights/Reports/SceneMigrationPhase3Report.md";
+        private const string GeneratedCoreScenesFolder = "Assets/PortalNights/Scenes/Core";
+        private const string Phase3ReportPath = "Assets/PortalNights/Reports/SceneMigrationPhase3Report.md";
+        private const string Phase4ReportPath = "Assets/PortalNights/Reports/SceneMigrationPhase4Report.md";
+        private const string CoreScenePath = GeneratedCoreScenesFolder + "/PortalNightsCore.unity";
+        private const string Planet1ScenePath = GeneratedScenesFolder + "/PortalNightsPlanet1_Defense.unity";
 
         private static readonly PlanetScenePlan[] Plans =
         {
@@ -36,9 +40,81 @@ namespace PortalNights.EditorTools
             "Main Camera"
         };
 
+        private static readonly string[] CoreRequiredRootNames =
+        {
+            "NetworkManager",
+            "PN_GameController",
+            "PN_HUD_Canvas",
+            "EventSystem",
+            "Main Camera",
+            "PN_GlobalVolume_Bloom",
+            "PN_Sun_KeyLight"
+        };
+
+        private static readonly string[] Planet1ArenaChildNames =
+        {
+            "Environment",
+            "PortalArea",
+            "EntranceBridge",
+            "LaneFork",
+            "LeftLane",
+            "RightLane",
+            "CoreArena",
+            "Background",
+            "VFX"
+        };
+
+        private static readonly string[] Planet1TopLevelNames =
+        {
+            "PN_Central_Core",
+            "PN_BuildPads",
+            "PN_PlayerSpawn_1",
+            "PN_PlayerSpawn_2",
+            "PN_PlayerSpawn_3",
+            "PN_PlayerSpawn_4",
+            "PN_PlayerSpawn_5",
+            "PN_PlayerSpawn_6"
+        };
+
+        private static readonly string[] FuturePlanetRootNames =
+        {
+            "Planet2_CrystalMoon",
+            "Planet3_AshRelayStation",
+            "Planet4_SwarmExpanse",
+            "Planet5_CrimsonSingularity"
+        };
+
+        private static readonly string[] OptionalGlobalNameKeywords =
+        {
+            "TransitionDirector",
+            "MissionComms",
+            "ObjectiveTracker",
+            "RadioDialogue",
+            "Localization",
+            "Bootstrap",
+            "Yandex",
+            "YG"
+        };
+
+        private static readonly string[] OptionalGlobalComponentKeywords =
+        {
+            "PortalNightsPlanetTransitionDirector",
+            "PortalNightsMissionComms",
+            "PortalNightsObjectiveTracker",
+            "PortalNightsRadioDialogueController",
+            "PortalNightsLanguageBootstrap",
+            "YG",
+            "Yandex"
+        };
+
         private static List<DryRunResult> lastDryRunResults = new List<DryRunResult>();
         private static List<GenerationResult> lastGenerationResults = new List<GenerationResult>();
         private static List<ValidationResult> lastValidationResults = new List<ValidationResult>();
+        private static Phase4DryRunResult lastPhase4DryRunResult;
+        private static Phase4CoreGenerationResult lastPhase4CoreGenerationResult;
+        private static Phase4Planet1GenerationResult lastPhase4Planet1GenerationResult;
+        private static Phase4CoreValidationResult lastPhase4CoreValidationResult;
+        private static Phase4Planet1ValidationResult lastPhase4Planet1ValidationResult;
 
         [MenuItem("Portal Nights/Scene Migration/Dry Run Planet Scene Copy P2-P5")]
         public static void DryRunPlanetSceneCopyP2P5()
@@ -97,6 +173,65 @@ namespace PortalNights.EditorTools
             }
         }
 
+        [MenuItem("Portal Nights/Scene Migration/Dry Run Core And Planet1 Copy")]
+        public static void DryRunCoreAndPlanet1Copy()
+        {
+            if (!PrepareForSceneOperation())
+            {
+                return;
+            }
+
+            try
+            {
+                lastPhase4DryRunResult = RunPhase4DryRun(true);
+                WritePhase4Report();
+            }
+            finally
+            {
+                ReopenSourceScene();
+            }
+        }
+
+        [MenuItem("Portal Nights/Scene Migration/Generate Core And Planet1 Scene Copies")]
+        public static void GenerateCoreAndPlanet1SceneCopies()
+        {
+            if (!PrepareForSceneOperation())
+            {
+                return;
+            }
+
+            try
+            {
+                lastPhase4CoreGenerationResult = GenerateCoreSceneCopy(true);
+                lastPhase4Planet1GenerationResult = GeneratePlanet1SceneCopy(true);
+                WritePhase4Report();
+            }
+            finally
+            {
+                ReopenSourceScene();
+            }
+        }
+
+        [MenuItem("Portal Nights/Scene Migration/Validate Core And Planet1 Scenes")]
+        public static void ValidateCoreAndPlanet1Scenes()
+        {
+            if (!PrepareForSceneOperation())
+            {
+                return;
+            }
+
+            try
+            {
+                lastPhase4CoreValidationResult = ValidateCoreScene(true);
+                lastPhase4Planet1ValidationResult = ValidatePlanet1Scene(true);
+                WritePhase4Report();
+            }
+            finally
+            {
+                ReopenSourceScene();
+            }
+        }
+
         public static void RunPhase3WorkflowFromCommandLine()
         {
             bool success = false;
@@ -134,6 +269,53 @@ namespace PortalNights.EditorTools
             if (!success)
             {
                 throw new InvalidOperationException("Phase 3 workflow did not complete successfully.");
+            }
+        }
+
+        public static void RunPhase4WorkflowFromCommandLine()
+        {
+            bool success = false;
+            try
+            {
+                EnsurePhase4OutputFolders();
+                lastPhase4DryRunResult = RunPhase4DryRun(true);
+                if (!lastPhase4DryRunResult.IsClean)
+                {
+                    throw new InvalidOperationException("Phase 4 dry run failed. Check SceneMigrationPhase4Report.md for details.");
+                }
+
+                lastPhase4CoreGenerationResult = GenerateCoreSceneCopy(true);
+                if (!lastPhase4CoreGenerationResult.Success)
+                {
+                    throw new InvalidOperationException("Core scene generation failed. Check SceneMigrationPhase4Report.md for details.");
+                }
+
+                lastPhase4Planet1GenerationResult = GeneratePlanet1SceneCopy(true);
+                if (!lastPhase4Planet1GenerationResult.Success)
+                {
+                    throw new InvalidOperationException("Planet 1 scene generation failed. Check SceneMigrationPhase4Report.md for details.");
+                }
+
+                lastPhase4CoreValidationResult = ValidateCoreScene(true);
+                lastPhase4Planet1ValidationResult = ValidatePlanet1Scene(true);
+                if (!lastPhase4CoreValidationResult.Success || !lastPhase4Planet1ValidationResult.Success)
+                {
+                    throw new InvalidOperationException("Core/Planet 1 validation failed. Check SceneMigrationPhase4Report.md for details.");
+                }
+
+                success = true;
+            }
+            finally
+            {
+                ReopenSourceScene();
+                WritePhase4Report();
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+            }
+
+            if (!success)
+            {
+                throw new InvalidOperationException("Phase 4 workflow did not complete successfully.");
             }
         }
 
@@ -322,6 +504,313 @@ namespace PortalNights.EditorTools
             return results;
         }
 
+        private static Phase4DryRunResult RunPhase4DryRun(bool logToConsole)
+        {
+            Scene sourceScene = OpenSourceScene();
+            Phase4SourceSelection selection = AnalyzePhase4SourceScene(sourceScene);
+
+            Phase4DryRunResult result = new Phase4DryRunResult
+            {
+                CoreScenePath = CoreScenePath,
+                Planet1ScenePath = Planet1ScenePath,
+                CoreCopiedObjectNames = CollectObjectNames(selection.CoreObjects),
+                Planet1CopiedObjectNames = CollectObjectNames(selection.Planet1Objects),
+                ExcludedFuturePlanetRoots = new List<string>(selection.ExcludedFutureRootNames),
+                CoreMetrics = CollectMetrics(selection.CoreObjects),
+                Planet1Metrics = CollectMetrics(selection.Planet1Objects),
+                Issues = new List<string>(selection.Issues)
+            };
+
+            result.IsClean = result.Issues.Count == 0;
+            if (logToConsole)
+            {
+                UnityEngine.Debug.Log("[PortalNights][SceneMigration] Phase 4 dry run: " + result.ToLogLine());
+            }
+
+            return result;
+        }
+
+        private static Phase4CoreGenerationResult GenerateCoreSceneCopy(bool logToConsole)
+        {
+            EnsurePhase4OutputFolders();
+            Phase4CoreGenerationResult result = new Phase4CoreGenerationResult
+            {
+                ScenePath = CoreScenePath
+            };
+
+            try
+            {
+                Scene sourceScene = OpenSourceScene();
+                Phase4SourceSelection selection = AnalyzePhase4SourceScene(sourceScene);
+                result.CopiedObjectNames = CollectObjectNames(selection.CoreObjects);
+                result.ExcludedObjectNames = CollectExcludedCoreObjectNames();
+
+                if (selection.Issues.Count > 0)
+                {
+                    result.Issues.AddRange(selection.Issues);
+                    result.Error = "Source selection is incomplete.";
+                    return result;
+                }
+
+                Scene targetScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+                SceneManager.SetActiveScene(targetScene);
+
+                for (int i = 0; i < selection.CoreObjects.Count; i++)
+                {
+                    GameObject copy = UnityEngine.Object.Instantiate(selection.CoreObjects[i]);
+                    copy.name = selection.CoreObjects[i].name;
+                    copy.transform.SetParent(null, true);
+                    copy.SetActive(selection.CoreObjects[i].activeSelf);
+                }
+
+                EditorSceneManager.MarkSceneDirty(targetScene);
+                bool saveSucceeded = EditorSceneManager.SaveScene(targetScene, CoreScenePath, false);
+                if (!saveSucceeded)
+                {
+                    result.Error = "EditorSceneManager.SaveScene returned false.";
+                    EditorSceneManager.CloseScene(targetScene, true);
+                    SceneManager.SetActiveScene(sourceScene);
+                    return result;
+                }
+
+                result.Metrics = CollectSceneMetrics(targetScene);
+                result.NetworkObjectCount = result.Metrics.NetworkObjectCount;
+                result.Success = true;
+
+                SceneManager.SetActiveScene(sourceScene);
+                EditorSceneManager.CloseScene(targetScene, true);
+            }
+            catch (Exception exception)
+            {
+                result.Error = exception.Message;
+            }
+
+            if (logToConsole)
+            {
+                UnityEngine.Debug.Log("[PortalNights][SceneMigration] Generate Core: " + result.ToLogLine());
+            }
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            return result;
+        }
+
+        private static Phase4Planet1GenerationResult GeneratePlanet1SceneCopy(bool logToConsole)
+        {
+            EnsurePhase4OutputFolders();
+            Phase4Planet1GenerationResult result = new Phase4Planet1GenerationResult
+            {
+                ScenePath = Planet1ScenePath
+            };
+
+            try
+            {
+                Scene sourceScene = OpenSourceScene();
+                Phase4SourceSelection selection = AnalyzePhase4SourceScene(sourceScene);
+                result.CopiedObjectNames = CollectObjectNames(selection.Planet1Objects);
+                result.ExcludedObjectNames = new List<string>(selection.ExcludedFutureRootNames);
+                result.ExcludedObjectNames.AddRange(CollectExcludedPlanet1TopLevelNames());
+
+                if (selection.Issues.Count > 0)
+                {
+                    result.Issues.AddRange(selection.Issues);
+                    result.Error = "Source selection is incomplete.";
+                    return result;
+                }
+
+                Scene targetScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+                SceneManager.SetActiveScene(targetScene);
+
+                GameObject planet1Root = new GameObject("Planet1_Defense");
+                planet1Root.SetActive(true);
+                SceneManager.MoveGameObjectToScene(planet1Root, targetScene);
+
+                for (int i = 0; i < selection.Planet1Objects.Count; i++)
+                {
+                    GameObject sourceObject = selection.Planet1Objects[i];
+                    GameObject copy = UnityEngine.Object.Instantiate(sourceObject);
+                    copy.name = sourceObject.name;
+                    copy.transform.SetParent(planet1Root.transform, true);
+                    copy.SetActive(sourceObject.activeSelf);
+                }
+
+                PlanetScenePlan plan = new PlanetScenePlan(1, "Planet1_Defense", "Planet1_Defense", "PortalNightsPlanet1_Defense.unity", "planet.1.name");
+                PortalNightsPlanetSceneRoot sceneRoot = EnsureSinglePlanetSceneRoot(planet1Root, plan, out bool addedSceneRoot, out int rootComponentCountInScene);
+                sceneRoot.AutoDiscoverReferences();
+                bool validateSetupPassed = sceneRoot.ValidateSetup(true);
+                EditorUtility.SetDirty(sceneRoot);
+                EditorSceneManager.MarkSceneDirty(targetScene);
+
+                bool saveSucceeded = EditorSceneManager.SaveScene(targetScene, Planet1ScenePath, false);
+                if (!saveSucceeded)
+                {
+                    result.Error = "EditorSceneManager.SaveScene returned false.";
+                    EditorSceneManager.CloseScene(targetScene, true);
+                    SceneManager.SetActiveScene(sourceScene);
+                    return result;
+                }
+
+                result.AddedSceneRoot = addedSceneRoot;
+                result.SceneRootComponentCount = rootComponentCountInScene;
+                result.ValidateSetupPassed = validateSetupPassed;
+                result.PlayerSpawnCount = CountNamedObjectsUnderRoot(planet1Root.transform, "PN_PlayerSpawn_");
+                result.Metrics = CollectMetrics(planet1Root);
+                result.NetworkObjectCount = result.Metrics.NetworkObjectCount;
+                result.Success = true;
+
+                SceneManager.SetActiveScene(sourceScene);
+                EditorSceneManager.CloseScene(targetScene, true);
+            }
+            catch (Exception exception)
+            {
+                result.Error = exception.Message;
+            }
+
+            if (logToConsole)
+            {
+                UnityEngine.Debug.Log("[PortalNights][SceneMigration] Generate Planet1: " + result.ToLogLine());
+            }
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            return result;
+        }
+
+        private static Phase4CoreValidationResult ValidateCoreScene(bool logToConsole)
+        {
+            Phase4CoreValidationResult result = new Phase4CoreValidationResult
+            {
+                ScenePath = CoreScenePath
+            };
+
+            try
+            {
+                if (!File.Exists(CoreScenePath))
+                {
+                    result.Error = "Core scene file is missing.";
+                    return result;
+                }
+
+                Scene scene = EditorSceneManager.OpenScene(CoreScenePath, OpenSceneMode.Single);
+                result.Metrics = CollectSceneMetrics(scene);
+                result.NetworkObjectCount = result.Metrics.NetworkObjectCount;
+
+                result.HasNetworkManager = SceneContainsObjectNamed(scene, "NetworkManager");
+                result.HasGameController = SceneContainsObjectNamed(scene, "PN_GameController");
+                result.HasHudCanvas = SceneContainsObjectNamed(scene, "PN_HUD_Canvas");
+                result.HasEventSystem = SceneContainsObjectNamed(scene, "EventSystem");
+                result.HasMainCamera = SceneContainsObjectNamed(scene, "Main Camera");
+
+                result.HasArenaRoot = SceneContainsObjectNamed(scene, "PortalNightsArena");
+                result.HasPlanet1Core = SceneContainsObjectNamed(scene, "PN_Central_Core");
+                result.HasBuildPads = SceneContainsObjectNamed(scene, "PN_BuildPads");
+                result.PlayerSpawnCount = CountNamedObjectsInScene(scene, "PN_PlayerSpawn_");
+                result.ForbiddenFutureRoots = FindForbiddenTopLevelObjects(scene, FuturePlanetRootNames);
+                result.ForbiddenPlanet1Objects = FindForbiddenTopLevelObjects(scene, CombineNames(Planet1ArenaChildNames, Planet1TopLevelNames));
+
+                result.Success =
+                    result.HasNetworkManager
+                    && result.HasGameController
+                    && result.HasHudCanvas
+                    && result.HasEventSystem
+                    && result.HasMainCamera
+                    && !result.HasArenaRoot
+                    && !result.HasPlanet1Core
+                    && !result.HasBuildPads
+                    && result.PlayerSpawnCount == 0
+                    && result.ForbiddenFutureRoots.Count == 0
+                    && result.ForbiddenPlanet1Objects.Count == 0;
+            }
+            catch (Exception exception)
+            {
+                result.Error = exception.Message;
+            }
+
+            if (logToConsole)
+            {
+                UnityEngine.Debug.Log("[PortalNights][SceneMigration] Validate Core: " + result.ToLogLine());
+            }
+
+            return result;
+        }
+
+        private static Phase4Planet1ValidationResult ValidatePlanet1Scene(bool logToConsole)
+        {
+            Phase4Planet1ValidationResult result = new Phase4Planet1ValidationResult
+            {
+                ScenePath = Planet1ScenePath
+            };
+
+            try
+            {
+                if (!File.Exists(Planet1ScenePath))
+                {
+                    result.Error = "Planet 1 scene file is missing.";
+                    return result;
+                }
+
+                Scene scene = EditorSceneManager.OpenScene(Planet1ScenePath, OpenSceneMode.Single);
+                GameObject[] roots = scene.GetRootGameObjects();
+                result.RootCount = roots.Length;
+
+                GameObject expectedRoot = null;
+                for (int i = 0; i < roots.Length; i++)
+                {
+                    if (roots[i] != null && roots[i].name == "Planet1_Defense")
+                    {
+                        expectedRoot = roots[i];
+                        break;
+                    }
+                }
+
+                result.HasExpectedRoot = expectedRoot != null;
+                result.RootActive = expectedRoot != null && expectedRoot.activeSelf;
+                result.HasCentralCore = expectedRoot != null && FindInHierarchy(expectedRoot.transform, "PN_Central_Core") != null;
+                result.HasBuildPads = expectedRoot != null && FindInHierarchy(expectedRoot.transform, "PN_BuildPads") != null;
+                result.PlayerSpawnCount = expectedRoot == null ? 0 : CountNamedObjectsUnderRoot(expectedRoot.transform, "PN_PlayerSpawn_");
+
+                PortalNightsPlanetSceneRoot sceneRoot = expectedRoot == null ? null : expectedRoot.GetComponent<PortalNightsPlanetSceneRoot>();
+                result.HasPlanetSceneRoot = sceneRoot != null;
+                if (sceneRoot != null)
+                {
+                    result.PlanetIndexMatches = sceneRoot.PlanetIndex == 1;
+                    result.ValidateSetupPassed = sceneRoot.ValidateSetup(true);
+                }
+
+                result.SceneRootComponentsInScene = CountPlanetSceneRoots(scene);
+                result.Metrics = expectedRoot == null ? default : CollectMetrics(expectedRoot);
+                result.NetworkObjectCount = result.Metrics.NetworkObjectCount;
+
+                result.ForbiddenGlobalObjects = FindForbiddenTopLevelObjects(scene, CoreRequiredRootNames);
+                result.ForbiddenFutureRoots = FindForbiddenTopLevelObjects(scene, FuturePlanetRootNames);
+
+                result.Success =
+                    result.HasExpectedRoot
+                    && result.RootCount == 1
+                    && result.RootActive
+                    && result.HasPlanetSceneRoot
+                    && result.PlanetIndexMatches
+                    && result.ValidateSetupPassed
+                    && result.SceneRootComponentsInScene == 1
+                    && result.HasCentralCore
+                    && result.HasBuildPads
+                    && result.PlayerSpawnCount == 6
+                    && result.ForbiddenGlobalObjects.Count == 0
+                    && result.ForbiddenFutureRoots.Count == 0;
+            }
+            catch (Exception exception)
+            {
+                result.Error = exception.Message;
+            }
+
+            if (logToConsole)
+            {
+                UnityEngine.Debug.Log("[PortalNights][SceneMigration] Validate Planet1: " + result.ToLogLine());
+            }
+
+            return result;
+        }
+
         private static PortalNightsPlanetSceneRoot EnsureSinglePlanetSceneRoot(GameObject copiedRoot, PlanetScenePlan plan, out bool addedSceneRoot, out int rootComponentCountInScene)
         {
             PortalNightsPlanetSceneRoot[] existing = copiedRoot.GetComponents<PortalNightsPlanetSceneRoot>();
@@ -475,10 +964,416 @@ namespace PortalNights.EditorTools
             return null;
         }
 
+        private static GameObject FindTopLevelRootObject(Scene scene, string rootName)
+        {
+            GameObject[] roots = scene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
+            {
+                if (roots[i] != null && roots[i].name == rootName)
+                {
+                    return roots[i];
+                }
+            }
+
+            return null;
+        }
+
+        private static Transform FindDirectChild(Transform parent, string childName)
+        {
+            if (parent == null)
+            {
+                return null;
+            }
+
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                Transform child = parent.GetChild(i);
+                if (child != null && child.name == childName)
+                {
+                    return child;
+                }
+            }
+
+            return null;
+        }
+
+        private static Phase4SourceSelection AnalyzePhase4SourceScene(Scene sourceScene)
+        {
+            Phase4SourceSelection selection = new Phase4SourceSelection();
+            HashSet<int> coreIds = new HashSet<int>();
+            HashSet<int> planet1Ids = new HashSet<int>();
+
+            GameObject arenaRoot = FindTopLevelRootObject(sourceScene, "PortalNightsArena");
+            selection.ArenaRoot = arenaRoot;
+            if (arenaRoot == null)
+            {
+                selection.Issues.Add("PortalNightsArena root was not found in the source scene.");
+                return selection;
+            }
+
+            for (int i = 0; i < CoreRequiredRootNames.Length; i++)
+            {
+                GameObject requiredRoot = FindTopLevelRootObject(sourceScene, CoreRequiredRootNames[i]);
+                if (requiredRoot == null)
+                {
+                    selection.Issues.Add("Missing required core object: " + CoreRequiredRootNames[i]);
+                    continue;
+                }
+
+                AddUniqueObject(selection.CoreObjects, coreIds, requiredRoot);
+            }
+
+            List<GameObject> optionalGlobalRoots = FindOptionalGlobalRoots(sourceScene);
+            for (int i = 0; i < optionalGlobalRoots.Count; i++)
+            {
+                AddUniqueObject(selection.CoreObjects, coreIds, optionalGlobalRoots[i]);
+            }
+
+            for (int i = 0; i < Planet1ArenaChildNames.Length; i++)
+            {
+                Transform child = FindDirectChild(arenaRoot.transform, Planet1ArenaChildNames[i]);
+                if (child == null)
+                {
+                    selection.Issues.Add("Missing Planet 1 arena child: " + Planet1ArenaChildNames[i]);
+                    continue;
+                }
+
+                AddUniqueObject(selection.Planet1Objects, planet1Ids, child.gameObject);
+            }
+
+            for (int i = 0; i < Planet1TopLevelNames.Length; i++)
+            {
+                GameObject topLevelObject = FindTopLevelRootObject(sourceScene, Planet1TopLevelNames[i]);
+                if (topLevelObject == null)
+                {
+                    selection.Issues.Add("Missing Planet 1 top-level object: " + Planet1TopLevelNames[i]);
+                    continue;
+                }
+
+                AddUniqueObject(selection.Planet1Objects, planet1Ids, topLevelObject);
+            }
+
+            for (int i = 0; i < FuturePlanetRootNames.Length; i++)
+            {
+                Transform child = FindDirectChild(arenaRoot.transform, FuturePlanetRootNames[i]);
+                if (child != null)
+                {
+                    selection.ExcludedFutureRootNames.Add(child.name);
+                }
+                else
+                {
+                    selection.Issues.Add("Expected excluded future planet root was not found: " + FuturePlanetRootNames[i]);
+                }
+            }
+
+            return selection;
+        }
+
+        private static List<GameObject> FindOptionalGlobalRoots(Scene sourceScene)
+        {
+            List<GameObject> matches = new List<GameObject>();
+            GameObject[] roots = sourceScene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
+            {
+                GameObject root = roots[i];
+                if (root == null || IsNamed(root.name, CoreRequiredRootNames) || IsNamed(root.name, Planet1TopLevelNames) || root.name == "PortalNightsArena")
+                {
+                    continue;
+                }
+
+                if (ShouldCopyAsOptionalGlobalRoot(root))
+                {
+                    matches.Add(root);
+                }
+            }
+
+            return matches;
+        }
+
+        private static bool ShouldCopyAsOptionalGlobalRoot(GameObject root)
+        {
+            if (MatchesAny(root.name, OptionalGlobalNameKeywords))
+            {
+                return true;
+            }
+
+            Component[] components = root.GetComponents<Component>();
+            for (int i = 0; i < components.Length; i++)
+            {
+                Component component = components[i];
+                if (component == null)
+                {
+                    continue;
+                }
+
+                string typeName = component.GetType().Name;
+                if (MatchesAny(typeName, OptionalGlobalComponentKeywords))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private static void EnsureOutputFolders()
         {
             Directory.CreateDirectory(GeneratedScenesFolder);
-            Directory.CreateDirectory(Path.GetDirectoryName(ReportPath) ?? "Assets/PortalNights/Reports");
+            Directory.CreateDirectory(Path.GetDirectoryName(Phase3ReportPath) ?? "Assets/PortalNights/Reports");
+        }
+
+        private static void EnsurePhase4OutputFolders()
+        {
+            Directory.CreateDirectory(GeneratedScenesFolder);
+            Directory.CreateDirectory(GeneratedCoreScenesFolder);
+            Directory.CreateDirectory(Path.GetDirectoryName(Phase4ReportPath) ?? "Assets/PortalNights/Reports");
+        }
+
+        private static void AddUniqueObject(List<GameObject> list, HashSet<int> ids, GameObject gameObject)
+        {
+            if (gameObject == null)
+            {
+                return;
+            }
+
+            int instanceId = gameObject.GetInstanceID();
+            if (ids.Add(instanceId))
+            {
+                list.Add(gameObject);
+            }
+        }
+
+        private static List<string> CollectObjectNames(List<GameObject> objects)
+        {
+            List<string> names = new List<string>();
+            if (objects == null)
+            {
+                return names;
+            }
+
+            for (int i = 0; i < objects.Count; i++)
+            {
+                if (objects[i] != null)
+                {
+                    names.Add(objects[i].name);
+                }
+            }
+
+            return names;
+        }
+
+        private static SceneMetrics CollectMetrics(List<GameObject> roots)
+        {
+            SceneMetrics metrics = default;
+            if (roots == null)
+            {
+                return metrics;
+            }
+
+            for (int i = 0; i < roots.Count; i++)
+            {
+                if (roots[i] == null)
+                {
+                    continue;
+                }
+
+                SceneMetrics partial = CollectMetrics(roots[i]);
+                metrics.ObjectCount += partial.ObjectCount;
+                metrics.RendererCount += partial.RendererCount;
+                metrics.ColliderCount += partial.ColliderCount;
+                metrics.LightCount += partial.LightCount;
+                metrics.ParticleCount += partial.ParticleCount;
+                metrics.MonoBehaviourCount += partial.MonoBehaviourCount;
+                metrics.NetworkObjectCount += partial.NetworkObjectCount;
+            }
+
+            return metrics;
+        }
+
+        private static SceneMetrics CollectSceneMetrics(Scene scene)
+        {
+            SceneMetrics metrics = default;
+            GameObject[] roots = scene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
+            {
+                SceneMetrics partial = CollectMetrics(roots[i]);
+                metrics.ObjectCount += partial.ObjectCount;
+                metrics.RendererCount += partial.RendererCount;
+                metrics.ColliderCount += partial.ColliderCount;
+                metrics.LightCount += partial.LightCount;
+                metrics.ParticleCount += partial.ParticleCount;
+                metrics.MonoBehaviourCount += partial.MonoBehaviourCount;
+                metrics.NetworkObjectCount += partial.NetworkObjectCount;
+            }
+
+            return metrics;
+        }
+
+        private static bool SceneContainsObjectNamed(Scene scene, string objectName)
+        {
+            GameObject[] roots = scene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
+            {
+                if (FindInHierarchy(roots[i].transform, objectName) != null)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static List<string> FindForbiddenObjects(Scene scene, params string[] names)
+        {
+            List<string> forbidden = new List<string>();
+            GameObject[] roots = scene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
+            {
+                Transform[] transforms = roots[i].GetComponentsInChildren<Transform>(true);
+                for (int t = 0; t < transforms.Length; t++)
+                {
+                    string candidateName = transforms[t].gameObject.name;
+                    if (IsNamed(candidateName, names) && !forbidden.Contains(candidateName))
+                    {
+                        forbidden.Add(candidateName);
+                    }
+                }
+            }
+
+            return forbidden;
+        }
+
+        private static List<string> FindForbiddenTopLevelObjects(Scene scene, params string[] names)
+        {
+            List<string> forbidden = new List<string>();
+            GameObject[] roots = scene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
+            {
+                GameObject root = roots[i];
+                if (root == null)
+                {
+                    continue;
+                }
+
+                string candidateName = root.name;
+                if (IsNamed(candidateName, names) && !forbidden.Contains(candidateName))
+                {
+                    forbidden.Add(candidateName);
+                }
+            }
+
+            return forbidden;
+        }
+
+        private static int CountNamedObjectsInScene(Scene scene, string namePrefix)
+        {
+            int count = 0;
+            GameObject[] roots = scene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
+            {
+                count += CountNamedObjectsUnderRoot(roots[i].transform, namePrefix);
+            }
+
+            return count;
+        }
+
+        private static int CountNamedObjectsUnderRoot(Transform root, string namePrefix)
+        {
+            if (root == null)
+            {
+                return 0;
+            }
+
+            int count = 0;
+            Transform[] transforms = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                if (transforms[i] != null && transforms[i].name.StartsWith(namePrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static List<string> CollectExcludedCoreObjectNames()
+        {
+            List<string> excluded = new List<string> { "PortalNightsArena" };
+            excluded.AddRange(FuturePlanetRootNames);
+            excluded.AddRange(Planet1TopLevelNames);
+            return excluded;
+        }
+
+        private static List<string> CollectExcludedPlanet1TopLevelNames()
+        {
+            List<string> excluded = new List<string>(CoreRequiredRootNames);
+            excluded.Add("PortalNightsArena");
+            return excluded;
+        }
+
+        private static bool IsNamed(string candidateName, params string[] expectedNames)
+        {
+            if (string.IsNullOrEmpty(candidateName) || expectedNames == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < expectedNames.Length; i++)
+            {
+                if (string.Equals(candidateName, expectedNames[i], StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool MatchesAny(string value, params string[] keywords)
+        {
+            if (string.IsNullOrEmpty(value) || keywords == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < keywords.Length; i++)
+            {
+                if (!string.IsNullOrEmpty(keywords[i]) && value.IndexOf(keywords[i], StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string[] CombineNames(params string[][] groups)
+        {
+            List<string> combined = new List<string>();
+            if (groups == null)
+            {
+                return combined.ToArray();
+            }
+
+            for (int i = 0; i < groups.Length; i++)
+            {
+                string[] group = groups[i];
+                if (group == null)
+                {
+                    continue;
+                }
+
+                for (int j = 0; j < group.Length; j++)
+                {
+                    if (!string.IsNullOrEmpty(group[j]) && !combined.Contains(group[j]))
+                    {
+                        combined.Add(group[j]);
+                    }
+                }
+            }
+
+            return combined.ToArray();
         }
 
         private static bool AllDryRunsSucceeded(List<DryRunResult> results)
@@ -581,8 +1476,72 @@ namespace PortalNights.EditorTools
             report.AppendLine("3. Define the future Core/global scene contract before attempting a Planet 1 split.");
             report.AppendLine("4. Plan explicit Netcode handling for scene-placed `NetworkObject`s before runtime scene activation is introduced.");
 
-            File.WriteAllText(ReportPath, report.ToString(), Encoding.UTF8);
-            AssetDatabase.ImportAsset(ReportPath);
+            File.WriteAllText(Phase3ReportPath, report.ToString(), Encoding.UTF8);
+            AssetDatabase.ImportAsset(Phase3ReportPath);
+            AssetDatabase.SaveAssets();
+        }
+
+        private static void WritePhase4Report()
+        {
+            EnsurePhase4OutputFolders();
+            StringBuilder report = new StringBuilder();
+            report.AppendLine("# Scene Migration Phase 4 Report");
+            report.AppendLine();
+            report.AppendLine("This report documents the Phase 4 editor-only migration pass that generates a safe Core scene copy and a safe Planet 1 scene copy without wiring them into gameplay yet.");
+            report.AppendLine();
+            report.AppendLine("## Scene Paths");
+            report.AppendLine();
+            report.AppendLine("- Core scene: `" + CoreScenePath + "`");
+            report.AppendLine("- Planet 1 scene: `" + Planet1ScenePath + "`");
+            report.AppendLine();
+            report.AppendLine("## Dry Run");
+            report.AppendLine();
+            AppendPhase4DryRunSection(report, lastPhase4DryRunResult);
+            report.AppendLine();
+            report.AppendLine("## Generation Results");
+            report.AppendLine();
+            AppendPhase4CoreGenerationSection(report, lastPhase4CoreGenerationResult);
+            AppendPhase4Planet1GenerationSection(report, lastPhase4Planet1GenerationResult);
+            report.AppendLine();
+            report.AppendLine("## Validation Results");
+            report.AppendLine();
+            AppendPhase4CoreValidationSection(report, lastPhase4CoreValidationResult);
+            AppendPhase4Planet1ValidationSection(report, lastPhase4Planet1ValidationResult);
+            report.AppendLine();
+            report.AppendLine("## Safety Confirmations");
+            report.AppendLine();
+            report.AppendLine("- `PortalNightsArena.unity` was not modified: yes");
+            report.AppendLine("- `EditorBuildSettings.asset` was not modified: yes");
+            report.AppendLine("- `PortalNightsGameController.cs` was not modified: yes");
+            report.AppendLine("- Current one-scene gameplay path remains unchanged: yes");
+            report.AppendLine("- New scenes are not wired into gameplay yet: yes");
+            report.AppendLine();
+            report.AppendLine("## Risks");
+            report.AppendLine();
+            report.AppendLine("- `PN_GameController` in the copied Core scene may retain missing or source-scene serialized references. This is acceptable for Phase 4 because Phase 5 will replace those assumptions with scene-root driven references.");
+            report.AppendLine("- Scene-placed `NetworkObject`s remain copied as scene data only. Additive Netcode scene activation remains a dedicated later task.");
+            report.AppendLine("- Addressables and Build Settings integration are intentionally deferred until the scene-loading contract is stabilized.");
+            report.AppendLine();
+            report.AppendLine("## Why Scenes Are Not Wired Yet");
+            report.AppendLine();
+            report.AppendLine("These new scenes are migration artifacts only. Runtime loading, object ownership, transition sequencing, and cross-scene references still need a later phase to avoid breaking the current working one-scene game path.");
+            report.AppendLine();
+            report.AppendLine("## Git Checks");
+            report.AppendLine();
+            AppendGitCheck(report, "git status -sb", "status -sb");
+            AppendGitCheck(report, "git diff --name-only -- Assets/PortalNights/Scenes/PortalNightsArena.unity", "diff --name-only -- Assets/PortalNights/Scenes/PortalNightsArena.unity");
+            AppendGitCheck(report, "git diff --name-only -- ProjectSettings/EditorBuildSettings.asset", "diff --name-only -- ProjectSettings/EditorBuildSettings.asset");
+            AppendGitCheck(report, "git diff --name-only -- Assets/PortalNights/Scripts/PortalNightsGameController.cs", "diff --name-only -- Assets/PortalNights/Scripts/PortalNightsGameController.cs");
+            report.AppendLine();
+            report.AppendLine("## Recommended Phase 5 Steps");
+            report.AppendLine();
+            report.AppendLine("1. Introduce a controlled additive bootstrap flow that loads Core first and then a selected planet scene.");
+            report.AppendLine("2. Replace `PortalNightsGameController` scene assumptions with `PortalNightsPlanetSceneRoot` references.");
+            report.AppendLine("3. Define explicit Netcode handling for scene-placed `NetworkObject`s across Core and planet scenes.");
+            report.AppendLine("4. Validate transition/UI ownership and shared persistent systems before enabling runtime scene switching.");
+
+            File.WriteAllText(Phase4ReportPath, report.ToString(), Encoding.UTF8);
+            AssetDatabase.ImportAsset(Phase4ReportPath);
             AssetDatabase.SaveAssets();
         }
 
@@ -686,6 +1645,169 @@ namespace PortalNights.EditorTools
             }
         }
 
+        private static void AppendPhase4DryRunSection(StringBuilder report, Phase4DryRunResult result)
+        {
+            if (result == null)
+            {
+                report.AppendLine("No Phase 4 dry run has been recorded yet.");
+                return;
+            }
+
+            report.AppendLine("- Dry run clean: " + ToYesNo(result.IsClean));
+            report.AppendLine("- Core scene path: `" + result.CoreScenePath + "`");
+            report.AppendLine("- Planet 1 scene path: `" + result.Planet1ScenePath + "`");
+            report.AppendLine("- Core objects that would be copied: " + JoinOrNone(result.CoreCopiedObjectNames));
+            report.AppendLine("- Planet 1 objects that would be copied: " + JoinOrNone(result.Planet1CopiedObjectNames));
+            report.AppendLine("- Excluded future planet roots: " + JoinOrNone(result.ExcludedFuturePlanetRoots));
+            report.AppendLine("- Core metrics:");
+            AppendMetrics(report, result.CoreMetrics);
+            report.AppendLine("- Planet 1 metrics:");
+            AppendMetrics(report, result.Planet1Metrics);
+            if (result.Issues.Count > 0)
+            {
+                report.AppendLine("- Issues: " + JoinOrNone(result.Issues));
+            }
+        }
+
+        private static void AppendPhase4CoreGenerationSection(StringBuilder report, Phase4CoreGenerationResult result)
+        {
+            report.AppendLine("### Core Scene");
+            report.AppendLine();
+            if (result == null)
+            {
+                report.AppendLine("No Core scene generation has been recorded yet.");
+                report.AppendLine();
+                return;
+            }
+
+            report.AppendLine("- Scene path: `" + result.ScenePath + "`");
+            report.AppendLine("- Copied successfully: " + ToYesNo(result.Success));
+            report.AppendLine("- Copied objects: " + JoinOrNone(result.CopiedObjectNames));
+            report.AppendLine("- Intentionally excluded objects: " + JoinOrNone(result.ExcludedObjectNames));
+            report.AppendLine("- NetworkObject count: " + result.NetworkObjectCount);
+            if (result.Success)
+            {
+                AppendMetrics(report, result.Metrics);
+            }
+
+            if (result.Issues.Count > 0)
+            {
+                report.AppendLine("- Issues: " + JoinOrNone(result.Issues));
+            }
+
+            if (!string.IsNullOrEmpty(result.Error))
+            {
+                report.AppendLine("- Error: " + result.Error);
+            }
+
+            report.AppendLine();
+        }
+
+        private static void AppendPhase4Planet1GenerationSection(StringBuilder report, Phase4Planet1GenerationResult result)
+        {
+            report.AppendLine("### Planet 1 Scene");
+            report.AppendLine();
+            if (result == null)
+            {
+                report.AppendLine("No Planet 1 scene generation has been recorded yet.");
+                report.AppendLine();
+                return;
+            }
+
+            report.AppendLine("- Scene path: `" + result.ScenePath + "`");
+            report.AppendLine("- Copied successfully: " + ToYesNo(result.Success));
+            report.AppendLine("- Copied objects: " + JoinOrNone(result.CopiedObjectNames));
+            report.AppendLine("- Intentionally excluded objects: " + JoinOrNone(result.ExcludedObjectNames));
+            report.AppendLine("- Added `PortalNightsPlanetSceneRoot`: " + ToYesNo(result.AddedSceneRoot));
+            report.AppendLine("- `PortalNightsPlanetSceneRoot.ValidateSetup(true)` passed: " + ToYesNo(result.ValidateSetupPassed));
+            report.AppendLine("- `PortalNightsPlanetSceneRoot` count under root: " + result.SceneRootComponentCount);
+            report.AppendLine("- PN_PlayerSpawn_* count: " + result.PlayerSpawnCount);
+            report.AppendLine("- NetworkObject count: " + result.NetworkObjectCount);
+            if (result.Success)
+            {
+                AppendMetrics(report, result.Metrics);
+            }
+
+            if (result.Issues.Count > 0)
+            {
+                report.AppendLine("- Issues: " + JoinOrNone(result.Issues));
+            }
+
+            if (!string.IsNullOrEmpty(result.Error))
+            {
+                report.AppendLine("- Error: " + result.Error);
+            }
+
+            report.AppendLine();
+        }
+
+        private static void AppendPhase4CoreValidationSection(StringBuilder report, Phase4CoreValidationResult result)
+        {
+            report.AppendLine("### Core Scene Validation");
+            report.AppendLine();
+            if (result == null)
+            {
+                report.AppendLine("No Core scene validation has been recorded yet.");
+                report.AppendLine();
+                return;
+            }
+
+            report.AppendLine("- Validation success: " + ToYesNo(result.Success));
+            report.AppendLine("- Contains NetworkManager: " + ToYesNo(result.HasNetworkManager));
+            report.AppendLine("- Contains PN_GameController: " + ToYesNo(result.HasGameController));
+            report.AppendLine("- Contains PN_HUD_Canvas: " + ToYesNo(result.HasHudCanvas));
+            report.AppendLine("- Contains EventSystem: " + ToYesNo(result.HasEventSystem));
+            report.AppendLine("- Contains Main Camera: " + ToYesNo(result.HasMainCamera));
+            report.AppendLine("- Contains PortalNightsArena root: " + ToYesNo(result.HasArenaRoot));
+            report.AppendLine("- Contains PN_Central_Core: " + ToYesNo(result.HasPlanet1Core));
+            report.AppendLine("- Contains PN_BuildPads: " + ToYesNo(result.HasBuildPads));
+            report.AppendLine("- PN_PlayerSpawn_* count: " + result.PlayerSpawnCount);
+            report.AppendLine("- Forbidden future roots: " + JoinOrNone(result.ForbiddenFutureRoots));
+            report.AppendLine("- Forbidden Planet 1 objects: " + JoinOrNone(result.ForbiddenPlanet1Objects));
+            report.AppendLine("- NetworkObject count: " + result.NetworkObjectCount);
+            AppendMetrics(report, result.Metrics);
+            if (!string.IsNullOrEmpty(result.Error))
+            {
+                report.AppendLine("- Error: " + result.Error);
+            }
+
+            report.AppendLine();
+        }
+
+        private static void AppendPhase4Planet1ValidationSection(StringBuilder report, Phase4Planet1ValidationResult result)
+        {
+            report.AppendLine("### Planet 1 Scene Validation");
+            report.AppendLine();
+            if (result == null)
+            {
+                report.AppendLine("No Planet 1 scene validation has been recorded yet.");
+                report.AppendLine();
+                return;
+            }
+
+            report.AppendLine("- Validation success: " + ToYesNo(result.Success));
+            report.AppendLine("- Has expected root: " + ToYesNo(result.HasExpectedRoot));
+            report.AppendLine("- Total root count: " + result.RootCount);
+            report.AppendLine("- Root active: " + ToYesNo(result.RootActive));
+            report.AppendLine("- Has `PortalNightsPlanetSceneRoot`: " + ToYesNo(result.HasPlanetSceneRoot));
+            report.AppendLine("- `PortalNightsPlanetSceneRoot` count in scene: " + result.SceneRootComponentsInScene);
+            report.AppendLine("- planetIndex matches: " + ToYesNo(result.PlanetIndexMatches));
+            report.AppendLine("- `ValidateSetup(true)` passed: " + ToYesNo(result.ValidateSetupPassed));
+            report.AppendLine("- Has PN_Central_Core: " + ToYesNo(result.HasCentralCore));
+            report.AppendLine("- Has PN_BuildPads: " + ToYesNo(result.HasBuildPads));
+            report.AppendLine("- PN_PlayerSpawn_* count: " + result.PlayerSpawnCount);
+            report.AppendLine("- Forbidden core/global objects: " + JoinOrNone(result.ForbiddenGlobalObjects));
+            report.AppendLine("- Forbidden future planet roots: " + JoinOrNone(result.ForbiddenFutureRoots));
+            report.AppendLine("- NetworkObject count: " + result.NetworkObjectCount);
+            AppendMetrics(report, result.Metrics);
+            if (!string.IsNullOrEmpty(result.Error))
+            {
+                report.AppendLine("- Error: " + result.Error);
+            }
+
+            report.AppendLine();
+        }
+
         private static void AppendMetrics(StringBuilder report, SceneMetrics metrics)
         {
             report.AppendLine("- Object count: " + metrics.ObjectCount);
@@ -757,6 +1879,11 @@ namespace PortalNights.EditorTools
                 output = exception.Message;
                 return false;
             }
+        }
+
+        private static string JoinOrNone(List<string> values)
+        {
+            return values == null || values.Count == 0 ? "none" : string.Join(", ", values.ToArray());
         }
 
         private static string ToYesNo(bool value)
@@ -861,6 +1988,134 @@ namespace PortalNights.EditorTools
             {
                 return Success
                     ? "validated, objects=" + Metrics.ObjectCount + ", renderers=" + Metrics.RendererCount + ", colliders=" + Metrics.ColliderCount + ", networkObjects=" + Metrics.NetworkObjectCount
+                    : "failed (" + (string.IsNullOrEmpty(Error) ? "validation mismatch" : Error) + ")";
+            }
+        }
+
+        private sealed class Phase4SourceSelection
+        {
+            public GameObject ArenaRoot;
+            public readonly List<GameObject> CoreObjects = new List<GameObject>();
+            public readonly List<GameObject> Planet1Objects = new List<GameObject>();
+            public readonly List<string> ExcludedFutureRootNames = new List<string>();
+            public readonly List<string> Issues = new List<string>();
+        }
+
+        private sealed class Phase4DryRunResult
+        {
+            public string CoreScenePath;
+            public string Planet1ScenePath;
+            public bool IsClean;
+            public List<string> CoreCopiedObjectNames = new List<string>();
+            public List<string> Planet1CopiedObjectNames = new List<string>();
+            public List<string> ExcludedFuturePlanetRoots = new List<string>();
+            public SceneMetrics CoreMetrics;
+            public SceneMetrics Planet1Metrics;
+            public List<string> Issues = new List<string>();
+
+            public string ToLogLine()
+            {
+                return "clean=" + IsClean
+                    + ", coreObjects=" + CoreCopiedObjectNames.Count
+                    + ", planet1Objects=" + Planet1CopiedObjectNames.Count
+                    + ", excludedFutureRoots=" + ExcludedFuturePlanetRoots.Count
+                    + (Issues.Count > 0 ? ", issues=" + Issues.Count : string.Empty);
+            }
+        }
+
+        private sealed class Phase4CoreGenerationResult
+        {
+            public string ScenePath;
+            public bool Success;
+            public SceneMetrics Metrics;
+            public int NetworkObjectCount;
+            public List<string> CopiedObjectNames = new List<string>();
+            public List<string> ExcludedObjectNames = new List<string>();
+            public List<string> Issues = new List<string>();
+            public string Error;
+
+            public string ToLogLine()
+            {
+                return Success
+                    ? "saved scene, objects=" + CopiedObjectNames.Count + ", networkObjects=" + NetworkObjectCount
+                    : "failed (" + (string.IsNullOrEmpty(Error) ? JoinOrNone(Issues) : Error) + ")";
+            }
+        }
+
+        private sealed class Phase4Planet1GenerationResult
+        {
+            public string ScenePath;
+            public bool Success;
+            public bool AddedSceneRoot;
+            public int SceneRootComponentCount;
+            public bool ValidateSetupPassed;
+            public int PlayerSpawnCount;
+            public int NetworkObjectCount;
+            public SceneMetrics Metrics;
+            public List<string> CopiedObjectNames = new List<string>();
+            public List<string> ExcludedObjectNames = new List<string>();
+            public List<string> Issues = new List<string>();
+            public string Error;
+
+            public string ToLogLine()
+            {
+                return Success
+                    ? "saved scene, playerSpawns=" + PlayerSpawnCount + ", validate=" + ValidateSetupPassed + ", networkObjects=" + NetworkObjectCount
+                    : "failed (" + (string.IsNullOrEmpty(Error) ? JoinOrNone(Issues) : Error) + ")";
+            }
+        }
+
+        private sealed class Phase4CoreValidationResult
+        {
+            public string ScenePath;
+            public bool Success;
+            public bool HasNetworkManager;
+            public bool HasGameController;
+            public bool HasHudCanvas;
+            public bool HasEventSystem;
+            public bool HasMainCamera;
+            public bool HasArenaRoot;
+            public bool HasPlanet1Core;
+            public bool HasBuildPads;
+            public int PlayerSpawnCount;
+            public int NetworkObjectCount;
+            public SceneMetrics Metrics;
+            public List<string> ForbiddenFutureRoots = new List<string>();
+            public List<string> ForbiddenPlanet1Objects = new List<string>();
+            public string Error;
+
+            public string ToLogLine()
+            {
+                return Success
+                    ? "validated, networkObjects=" + NetworkObjectCount + ", objects=" + Metrics.ObjectCount
+                    : "failed (" + (string.IsNullOrEmpty(Error) ? "validation mismatch" : Error) + ")";
+            }
+        }
+
+        private sealed class Phase4Planet1ValidationResult
+        {
+            public string ScenePath;
+            public bool Success;
+            public bool HasExpectedRoot;
+            public int RootCount;
+            public bool RootActive;
+            public bool HasPlanetSceneRoot;
+            public int SceneRootComponentsInScene;
+            public bool PlanetIndexMatches;
+            public bool ValidateSetupPassed;
+            public bool HasCentralCore;
+            public bool HasBuildPads;
+            public int PlayerSpawnCount;
+            public int NetworkObjectCount;
+            public SceneMetrics Metrics;
+            public List<string> ForbiddenGlobalObjects = new List<string>();
+            public List<string> ForbiddenFutureRoots = new List<string>();
+            public string Error;
+
+            public string ToLogLine()
+            {
+                return Success
+                    ? "validated, playerSpawns=" + PlayerSpawnCount + ", networkObjects=" + NetworkObjectCount + ", objects=" + Metrics.ObjectCount
                     : "failed (" + (string.IsNullOrEmpty(Error) ? "validation mismatch" : Error) + ")";
             }
         }

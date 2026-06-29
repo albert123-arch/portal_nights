@@ -46,7 +46,7 @@ namespace PortalNights.Scenes
         public void AutoDiscoverReferences()
         {
             playerArrivalPoint = FindBestNamedTransform("PlayerArrivalPoint", "ArrivalPoint", "Arrival");
-            playerSpawnPoints = FilterNulls(FindTransformsContaining("PlayerSpawn"));
+            playerSpawnPoints = FilterNulls(FindTransformsContaining("PlayerSpawn", "PN_PlayerSpawn"));
             enemySpawnPoints = FilterNulls(FindEnemySpawnTransforms());
             objectiveMarkers = FilterNulls(FindObjectiveMarkerTransforms());
             buildPoints = FilterNulls(GetComponentsInChildren<PortalNightsBuildPoint>(true));
@@ -57,6 +57,11 @@ namespace PortalNights.Scenes
             mainObjectiveHealth = FindMainObjectiveHealth();
             exitPortal = FindBestNamedTransform("ExitPortal");
             universePortal = FindBestNamedTransform("UniversePortal");
+
+            if (playerArrivalPoint == null && playerSpawnPoints != null && playerSpawnPoints.Length > 0)
+            {
+                playerArrivalPoint = FindPreferredSpawnTransform(playerSpawnPoints, "PN_PlayerSpawn_1", "PlayerSpawn_1") ?? playerSpawnPoints[0];
+            }
 
             if ((playerSpawnPoints == null || playerSpawnPoints.Length == 0) && playerArrivalPoint != null)
             {
@@ -299,6 +304,29 @@ namespace PortalNights.Scenes
             }
 
             return matches.ToArray();
+        }
+
+        private static Transform FindPreferredSpawnTransform(Transform[] transforms, params string[] preferredNames)
+        {
+            if (transforms == null || transforms.Length == 0)
+            {
+                return null;
+            }
+
+            for (int preferredIndex = 0; preferredIndex < preferredNames.Length; preferredIndex++)
+            {
+                string preferredName = preferredNames[preferredIndex];
+                for (int i = 0; i < transforms.Length; i++)
+                {
+                    Transform candidate = transforms[i];
+                    if (candidate != null && string.Equals(candidate.name, preferredName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+
+            return null;
         }
 
         private PortalNightsHealth FindMainObjectiveHealth()
