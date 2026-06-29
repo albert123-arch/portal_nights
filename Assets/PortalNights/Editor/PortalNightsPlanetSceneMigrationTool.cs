@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using PortalNights.Scenes;
+using PortalNights;
 using Unity.Netcode;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -21,10 +22,12 @@ namespace PortalNights.EditorTools
         private const string Phase3ReportPath = "Assets/PortalNights/Reports/SceneMigrationPhase3Report.md";
         private const string Phase4ReportPath = "Assets/PortalNights/Reports/SceneMigrationPhase4Report.md";
         private const string Phase5AReportPath = "Assets/PortalNights/Reports/SceneMigrationPhase5AReport.md";
+        private const string Phase5BReportPath = "Assets/PortalNights/Reports/SceneMigrationPhase5BReport.md";
         private const string CoreScenePath = GeneratedCoreScenesFolder + "/PortalNightsCore.unity";
         private const string Planet1ScenePath = GeneratedScenesFolder + "/PortalNightsPlanet1_Defense.unity";
         private const string PortalNightsArenaSceneName = "PortalNightsArena";
         private const string PortalNightsCoreSceneName = "PortalNightsCore";
+        private const string CoreSceneBootstrapRootName = "PN_SceneModeServices";
 
         private static readonly PlanetScenePlan[] Plans =
         {
@@ -139,6 +142,8 @@ namespace PortalNights.EditorTools
         private static Phase4CoreValidationResult lastPhase4CoreValidationResult;
         private static Phase4Planet1ValidationResult lastPhase4Planet1ValidationResult;
         private static Phase5AValidationResult lastPhase5AValidationResult;
+        private static Phase5BCoreSetupResult lastPhase5BCoreSetupResult;
+        private static Phase5BValidationResult lastPhase5BValidationResult;
 
         [MenuItem("Portal Nights/Scene Migration/Dry Run Planet Scene Copy P2-P5")]
         public static void DryRunPlanetSceneCopyP2P5()
@@ -275,6 +280,25 @@ namespace PortalNights.EditorTools
             }
         }
 
+        [MenuItem("Portal Nights/Scene Migration/Validate Experimental Core Bootstrap")]
+        public static void ValidateExperimentalCoreBootstrap()
+        {
+            if (!PrepareForSceneOperation())
+            {
+                return;
+            }
+
+            try
+            {
+                lastPhase5BValidationResult = ValidateExperimentalCoreBootstrapInternal(true);
+                WritePhase5BReport();
+            }
+            finally
+            {
+                ReopenSourceScene();
+            }
+        }
+
         public static void RunPhase3WorkflowFromCommandLine()
         {
             bool success = false;
@@ -387,6 +411,39 @@ namespace PortalNights.EditorTools
             if (!success)
             {
                 throw new InvalidOperationException("Phase 5A workflow did not complete successfully.");
+            }
+        }
+
+        public static void RunPhase5BWorkflowFromCommandLine()
+        {
+            bool success = false;
+            try
+            {
+                lastPhase5BCoreSetupResult = EnsureExperimentalCoreBootstrapSetup(true);
+                if (lastPhase5BCoreSetupResult == null || !lastPhase5BCoreSetupResult.Success)
+                {
+                    throw new InvalidOperationException("Phase 5B Core scene setup failed. Check SceneMigrationPhase5BReport.md for details.");
+                }
+
+                lastPhase5BValidationResult = ValidateExperimentalCoreBootstrapInternal(true);
+                if (lastPhase5BValidationResult == null || !lastPhase5BValidationResult.Success)
+                {
+                    throw new InvalidOperationException("Phase 5B validation failed. Check SceneMigrationPhase5BReport.md for details.");
+                }
+
+                success = true;
+            }
+            finally
+            {
+                ReopenSourceScene();
+                WritePhase5BReport();
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+            }
+
+            if (!success)
+            {
+                throw new InvalidOperationException("Phase 5B workflow did not complete successfully.");
             }
         }
 
@@ -748,6 +805,289 @@ namespace PortalNights.EditorTools
             {
                 EditorSceneManager.CloseScene(scene, true);
             }
+        }
+
+        private static Phase5BCoreSetupResult EnsureExperimentalCoreBootstrapSetup(bool logToConsole)
+        {
+            Phase5BCoreSetupResult result = new Phase5BCoreSetupResult
+            {
+                ScenePath = CoreScenePath,
+                BootstrapRootName = CoreSceneBootstrapRootName
+            };
+
+            try
+            {
+                if (!File.Exists(CoreScenePath))
+                {
+                    result.Error = "Core scene file is missing.";
+                    return result;
+                }
+
+                Scene scene = EditorSceneManager.OpenScene(CoreScenePath, OpenSceneMode.Single);
+                GameObject servicesRoot = FindTopLevelRootObject(scene, CoreSceneBootstrapRootName);
+                if (servicesRoot == null)
+                {
+                    servicesRoot = new GameObject(CoreSceneBootstrapRootName);
+                    SceneManager.MoveGameObjectToScene(servicesRoot, scene);
+                    result.CreatedBootstrapRoot = true;
+                }
+
+                servicesRoot.SetActive(true);
+                result.ServicesRootActive = servicesRoot.activeSelf;
+
+                PortalNightsPlanetSceneRegistry registry = EnsureSingleComponent<PortalNightsPlanetSceneRegistry>(servicesRoot, out bool registryAdded);
+                PortalNightsSceneTransitionManager transitionManager = EnsureSingleComponent<PortalNightsSceneTransitionManager>(servicesRoot, out bool transitionAdded);
+                PortalNightsSceneModeBootstrap bootstrap = EnsureSingleComponent<PortalNightsSceneModeBootstrap>(servicesRoot, out bool bootstrapAdded);
+                PortalNightsGameController gameController = FindTopLevelRootObject(scene, "PN_GameController")?.GetComponent<PortalNightsGameController>();
+
+                result.RegistryAdded = registryAdded;
+                result.TransitionManagerAdded = transitionAdded;
+                result.BootstrapAdded = bootstrapAdded;
+                result.GameControllerFound = gameController != null;
+
+                SerializedObject transitionSerialized = new SerializedObject(transitionManager);
+                transitionSerialized.FindProperty("registry").objectReferenceValue = registry;
+                transitionSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+                SerializedObject bootstrapSerialized = new SerializedObject(bootstrap);
+                bootstrapSerialized.FindProperty("enableSceneMode").boolValue = false;
+                bootstrapSerialized.FindProperty("initialPlanetIndex").intValue = 1;
+                bootstrapSerialized.FindProperty("transitionManager").objectReferenceValue = transitionManager;
+                bootstrapSerialized.FindProperty("registry").objectReferenceValue = registry;
+                bootstrapSerialized.FindProperty("gameController").objectReferenceValue = gameController;
+                bootstrapSerialized.FindProperty("debugLogs").boolValue = true;
+                bootstrapSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+                result.RegistryAssignedToTransitionManager = transitionSerialized.FindProperty("registry").objectReferenceValue == registry;
+                result.BootstrapAssignedTransitionManager = bootstrapSerialized.FindProperty("transitionManager").objectReferenceValue == transitionManager;
+                result.BootstrapAssignedRegistry = bootstrapSerialized.FindProperty("registry").objectReferenceValue == registry;
+                result.BootstrapAssignedGameController = gameController != null && bootstrapSerialized.FindProperty("gameController").objectReferenceValue == gameController;
+                result.EnableSceneModeDisabled = !bootstrapSerialized.FindProperty("enableSceneMode").boolValue;
+                result.InitialPlanetIndex = bootstrapSerialized.FindProperty("initialPlanetIndex").intValue;
+
+                result.RegistryCountInScene = CountComponentsInScene<PortalNightsPlanetSceneRegistry>(scene);
+                result.TransitionManagerCountInScene = CountComponentsInScene<PortalNightsSceneTransitionManager>(scene);
+                result.BootstrapCountInScene = CountComponentsInScene<PortalNightsSceneModeBootstrap>(scene);
+
+                EditorUtility.SetDirty(servicesRoot);
+                EditorUtility.SetDirty(registry);
+                EditorUtility.SetDirty(transitionManager);
+                EditorUtility.SetDirty(bootstrap);
+                EditorSceneManager.MarkSceneDirty(scene);
+
+                bool saveSucceeded = EditorSceneManager.SaveScene(scene, CoreScenePath, false);
+                if (!saveSucceeded)
+                {
+                    result.Error = "EditorSceneManager.SaveScene returned false.";
+                    return result;
+                }
+
+                result.Success =
+                    result.ServicesRootActive
+                    && result.RegistryCountInScene == 1
+                    && result.TransitionManagerCountInScene == 1
+                    && result.BootstrapCountInScene == 1
+                    && result.EnableSceneModeDisabled
+                    && result.InitialPlanetIndex == 1
+                    && result.RegistryAssignedToTransitionManager
+                    && result.BootstrapAssignedTransitionManager
+                    && result.BootstrapAssignedRegistry;
+            }
+            catch (Exception exception)
+            {
+                result.Error = exception.Message;
+            }
+
+            if (logToConsole)
+            {
+                UnityEngine.Debug.Log("[PortalNights][SceneMigration] Phase 5B Core setup: " + result.ToLogLine());
+            }
+
+            return result;
+        }
+
+        private static Phase5BValidationResult ValidateExperimentalCoreBootstrapInternal(bool logToConsole)
+        {
+            Phase5BValidationResult result = new Phase5BValidationResult
+            {
+                CoreScenePath = CoreScenePath,
+                Planet1ScenePath = Planet1ScenePath
+            };
+
+            Scene coreScene = default;
+            Scene planet1Scene = default;
+
+            try
+            {
+                if (!File.Exists(CoreScenePath))
+                {
+                    result.Error = "Core scene file is missing.";
+                    return result;
+                }
+
+                if (!File.Exists(Planet1ScenePath))
+                {
+                    result.Error = "Planet 1 scene file is missing.";
+                    return result;
+                }
+
+                coreScene = EditorSceneManager.OpenScene(CoreScenePath, OpenSceneMode.Single);
+                result.CoreMetrics = CollectSceneMetrics(coreScene);
+                result.CoreRootCount = coreScene.rootCount;
+
+                PortalNightsPlanetSceneRegistry registry = FindComponentInScene<PortalNightsPlanetSceneRegistry>(coreScene);
+                PortalNightsSceneTransitionManager transitionManager = FindComponentInScene<PortalNightsSceneTransitionManager>(coreScene);
+                PortalNightsSceneModeBootstrap bootstrap = FindComponentInScene<PortalNightsSceneModeBootstrap>(coreScene);
+                PortalNightsGameController gameController = FindTopLevelRootObject(coreScene, "PN_GameController")?.GetComponent<PortalNightsGameController>();
+
+                result.RegistryExists = registry != null;
+                result.TransitionManagerExists = transitionManager != null;
+                result.BootstrapExists = bootstrap != null;
+                result.GameControllerExists = gameController != null;
+                result.HudExists = SceneContainsObjectNamed(coreScene, "PN_HUD_Canvas");
+                result.NetworkManagerExists = SceneContainsObjectNamed(coreScene, "NetworkManager");
+                result.EnableSceneModeDisabled = bootstrap != null && !GetSerializedBool(bootstrap, "enableSceneMode");
+                result.InitialPlanetIndex = bootstrap == null ? -1 : GetSerializedInt(bootstrap, "initialPlanetIndex");
+                result.BootstrapHasTransitionReference = bootstrap != null && GetSerializedObjectReference(bootstrap, "transitionManager") == transitionManager;
+                result.BootstrapHasRegistryReference = bootstrap != null && GetSerializedObjectReference(bootstrap, "registry") == registry;
+                result.BootstrapHasGameControllerReference = bootstrap != null && GetSerializedObjectReference(bootstrap, "gameController") == gameController;
+
+                planet1Scene = EditorSceneManager.OpenScene(Planet1ScenePath, OpenSceneMode.Additive);
+                result.Planet1Metrics = CollectSceneMetrics(planet1Scene);
+                result.Planet1RootCount = planet1Scene.rootCount;
+                result.CoreAndPlanet1LoadedTogether = coreScene.IsValid() && coreScene.isLoaded && planet1Scene.IsValid() && planet1Scene.isLoaded;
+                result.Planet1SceneRootCount = CountPlanetSceneRoots(planet1Scene);
+
+                GameObject planet1RootObject = FindTopLevelRootObject(planet1Scene, "Planet1_Defense");
+                PortalNightsPlanetSceneRoot planet1Root = planet1RootObject == null ? null : planet1RootObject.GetComponent<PortalNightsPlanetSceneRoot>();
+                result.Planet1ExpectedRootFound = planet1RootObject != null;
+                result.Planet1ExpectedRootActive = planet1RootObject != null && planet1RootObject.activeSelf;
+                result.Planet1SceneRootExists = planet1Root != null;
+                result.Planet1PlanetIndexMatches = planet1Root != null && planet1Root.PlanetIndex == 1;
+                result.Planet1ValidateSetupPassed = planet1Root != null && planet1Root.ValidateSetup(true);
+
+                result.PortalNightsArenaIsFirstEnabledScene = IsFirstEnabledBuildScene(SourceScenePath);
+
+                result.Success =
+                    result.RegistryExists
+                    && result.TransitionManagerExists
+                    && result.BootstrapExists
+                    && result.EnableSceneModeDisabled
+                    && result.GameControllerExists
+                    && result.HudExists
+                    && result.NetworkManagerExists
+                    && result.Planet1SceneRootCount == 1
+                    && result.Planet1ExpectedRootFound
+                    && result.Planet1ExpectedRootActive
+                    && result.Planet1SceneRootExists
+                    && result.Planet1PlanetIndexMatches
+                    && result.Planet1ValidateSetupPassed
+                    && result.CoreAndPlanet1LoadedTogether
+                    && result.PortalNightsArenaIsFirstEnabledScene;
+            }
+            catch (Exception exception)
+            {
+                result.Error = exception.Message;
+            }
+            finally
+            {
+                CloseSceneIfLoaded(planet1Scene);
+                CloseSceneIfLoaded(coreScene);
+                ReopenSourceScene();
+            }
+
+            if (logToConsole)
+            {
+                UnityEngine.Debug.Log("[PortalNights][SceneMigration] Phase 5B validation: " + result.ToLogLine());
+            }
+
+            return result;
+        }
+
+        private static T EnsureSingleComponent<T>(GameObject target, out bool added) where T : Component
+        {
+            T[] existing = target.GetComponents<T>();
+            T component;
+            if (existing.Length == 0)
+            {
+                component = target.AddComponent<T>();
+                added = true;
+            }
+            else
+            {
+                component = existing[0];
+                added = false;
+                for (int i = 1; i < existing.Length; i++)
+                {
+                    UnityEngine.Object.DestroyImmediate(existing[i], true);
+                }
+            }
+
+            return component;
+        }
+
+        private static int CountComponentsInScene<T>(Scene scene) where T : Component
+        {
+            int count = 0;
+            GameObject[] roots = scene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
+            {
+                count += roots[i].GetComponentsInChildren<T>(true).Length;
+            }
+
+            return count;
+        }
+
+        private static T FindComponentInScene<T>(Scene scene) where T : Component
+        {
+            GameObject[] roots = scene.GetRootGameObjects();
+            for (int i = 0; i < roots.Length; i++)
+            {
+                T component = roots[i].GetComponentInChildren<T>(true);
+                if (component != null)
+                {
+                    return component;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool GetSerializedBool(UnityEngine.Object target, string propertyName)
+        {
+            SerializedObject serializedObject = new SerializedObject(target);
+            SerializedProperty property = serializedObject.FindProperty(propertyName);
+            return property != null && property.boolValue;
+        }
+
+        private static int GetSerializedInt(UnityEngine.Object target, string propertyName)
+        {
+            SerializedObject serializedObject = new SerializedObject(target);
+            SerializedProperty property = serializedObject.FindProperty(propertyName);
+            return property == null ? 0 : property.intValue;
+        }
+
+        private static UnityEngine.Object GetSerializedObjectReference(UnityEngine.Object target, string propertyName)
+        {
+            SerializedObject serializedObject = new SerializedObject(target);
+            SerializedProperty property = serializedObject.FindProperty(propertyName);
+            return property == null ? null : property.objectReferenceValue;
+        }
+
+        private static bool IsFirstEnabledBuildScene(string expectedScenePath)
+        {
+            EditorBuildSettingsScene[] scenes = EditorBuildSettings.scenes ?? Array.Empty<EditorBuildSettingsScene>();
+            for (int i = 0; i < scenes.Length; i++)
+            {
+                if (!scenes[i].enabled)
+                {
+                    continue;
+                }
+
+                return string.Equals(NormalizeScenePath(scenes[i].path), NormalizeScenePath(expectedScenePath), StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
         }
 
         private static List<DryRunResult> RunDryRun(bool logToConsole)
@@ -2028,6 +2368,74 @@ namespace PortalNights.EditorTools
             AssetDatabase.SaveAssets();
         }
 
+        private static void WritePhase5BReport()
+        {
+            EnsurePhase4OutputFolders();
+            StringBuilder report = new StringBuilder();
+            report.AppendLine("# Scene Migration Phase 5B Report");
+            report.AppendLine();
+            report.AppendLine("This report documents Phase 5B: an experimental Core + Planet1 bootstrap path that stays disabled by default so the current PortalNightsArena workflow is untouched.");
+            report.AppendLine();
+            report.AppendLine("## Files Changed");
+            report.AppendLine();
+            report.AppendLine("- `Assets/PortalNights/Scripts/Scenes/PortalNightsSceneModeBootstrap.cs`");
+            report.AppendLine("- `Assets/PortalNights/Scenes/Core/PortalNightsCore.unity`");
+            report.AppendLine("- `Assets/PortalNights/Editor/PortalNightsPlanetSceneMigrationTool.cs`");
+            report.AppendLine("- `Assets/PortalNights/Reports/SceneMigrationPhase5BReport.md`");
+            report.AppendLine("- `Assets/PortalNights/Scripts/PortalNightsGameController.cs`: no change");
+            report.AppendLine();
+            report.AppendLine("## Components Added");
+            report.AppendLine();
+            AppendPhase5BCoreSetupSection(report, lastPhase5BCoreSetupResult);
+            report.AppendLine();
+            report.AppendLine("## Validation Results");
+            report.AppendLine();
+            AppendPhase5BValidationSection(report, lastPhase5BValidationResult);
+            report.AppendLine();
+            report.AppendLine("## Manual Experimental Toggle Notes");
+            report.AppendLine();
+            report.AppendLine("1. Open `Assets/PortalNights/Scenes/Core/PortalNightsCore.unity`.");
+            report.AppendLine("2. Select `" + CoreSceneBootstrapRootName + "` and temporarily enable `PortalNightsSceneModeBootstrap.enableSceneMode`.");
+            report.AppendLine("3. Enter Play Mode and verify Planet1 loads additively.");
+            report.AppendLine("4. Revert `enableSceneMode` back to `false` before saving or committing.");
+            report.AppendLine();
+            report.AppendLine("## Safety Confirmations");
+            report.AppendLine();
+            report.AppendLine("- `PortalNightsArena.unity` was not modified: yes");
+            report.AppendLine("- `PortalNightsArena.unity` remains first Build Settings scene: " + ToYesNo(lastPhase5BValidationResult != null && lastPhase5BValidationResult.PortalNightsArenaIsFirstEnabledScene));
+            report.AppendLine("- Bootstrap `enableSceneMode` is false in the committed Core scene: " + ToYesNo(lastPhase5BValidationResult != null && lastPhase5BValidationResult.EnableSceneModeDisabled));
+            report.AppendLine("- Current one-scene workflow remains unchanged: yes");
+            report.AppendLine("- Current gameplay still uses `PortalNightsArena`: yes");
+            report.AppendLine("- `PortalNightsGameController.cs` was modified: no");
+            report.AppendLine("- No archives/zip/backups were created: yes");
+            report.AppendLine("- No WebGL build was run: yes");
+            report.AppendLine();
+            report.AppendLine("## Remaining Risks");
+            report.AppendLine();
+            report.AppendLine("- Full Netcode additive scene integration is still not implemented.");
+            report.AppendLine("- `PortalNightsGameController` still follows legacy one-scene assumptions and is not yet bound to `PortalNightsPlanetSceneRoot` references.");
+            report.AppendLine("- P2-P5 are intentionally not wired into the experimental bootstrap yet.");
+            report.AppendLine();
+            report.AppendLine("## Why P2-P5 Are Not Wired Yet");
+            report.AppendLine();
+            report.AppendLine("Phase 5B is limited to an experimental Core + Planet1 startup path. Future planets still need scene-root driven gameplay binding and explicit additive Netcode handling before they can safely join the runtime flow.");
+            report.AppendLine();
+            report.AppendLine("## Recommended Phase 5C");
+            report.AppendLine();
+            report.AppendLine("Enable the experimental Core + Planet1 Play Mode test locally, then bind `PortalNightsGameController` references from `PortalNightsPlanetSceneRoot` without replacing the legacy one-scene path.");
+            report.AppendLine();
+            report.AppendLine("## Git Checks");
+            report.AppendLine();
+            AppendGitCheck(report, "git status -sb", "status -sb");
+            AppendGitCheck(report, "git diff --name-only -- Assets/PortalNights/Scenes/PortalNightsArena.unity", "diff --name-only -- Assets/PortalNights/Scenes/PortalNightsArena.unity");
+            AppendGitCheck(report, "git diff --name-only -- ProjectSettings/EditorBuildSettings.asset", "diff --name-only -- ProjectSettings/EditorBuildSettings.asset");
+            AppendGitCheck(report, "git diff --name-only -- Assets/PortalNights/Scripts/PortalNightsGameController.cs", "diff --name-only -- Assets/PortalNights/Scripts/PortalNightsGameController.cs");
+
+            File.WriteAllText(Phase5BReportPath, report.ToString(), Encoding.UTF8);
+            AssetDatabase.ImportAsset(Phase5BReportPath);
+            AssetDatabase.SaveAssets();
+        }
+
         private static void AppendDryRunSection(StringBuilder report, List<DryRunResult> results)
         {
             if (results == null || results.Count == 0)
@@ -2341,6 +2749,79 @@ namespace PortalNights.EditorTools
             for (int i = 0; i < result.PlanetValidations.Count; i++)
             {
                 AppendPhase5APlanetValidationEntry(report, result.PlanetValidations[i]);
+            }
+        }
+
+        private static void AppendPhase5BCoreSetupSection(StringBuilder report, Phase5BCoreSetupResult result)
+        {
+            if (result == null)
+            {
+                report.AppendLine("No Core bootstrap setup has been recorded yet.");
+                return;
+            }
+
+            report.AppendLine("- Core scene path: `" + result.ScenePath + "`");
+            report.AppendLine("- Bootstrap root: `" + result.BootstrapRootName + "`");
+            report.AppendLine("- Created bootstrap root: " + ToYesNo(result.CreatedBootstrapRoot));
+            report.AppendLine("- Root active: " + ToYesNo(result.ServicesRootActive));
+            report.AppendLine("- Added `PortalNightsPlanetSceneRegistry`: " + ToYesNo(result.RegistryAdded));
+            report.AppendLine("- Added `PortalNightsSceneTransitionManager`: " + ToYesNo(result.TransitionManagerAdded));
+            report.AppendLine("- Added `PortalNightsSceneModeBootstrap`: " + ToYesNo(result.BootstrapAdded));
+            report.AppendLine("- Registry count in Core scene: " + result.RegistryCountInScene);
+            report.AppendLine("- TransitionManager count in Core scene: " + result.TransitionManagerCountInScene);
+            report.AppendLine("- Bootstrap count in Core scene: " + result.BootstrapCountInScene);
+            report.AppendLine("- GameController found: " + ToYesNo(result.GameControllerFound));
+            report.AppendLine("- TransitionManager.registry assigned: " + ToYesNo(result.RegistryAssignedToTransitionManager));
+            report.AppendLine("- Bootstrap.transitionManager assigned: " + ToYesNo(result.BootstrapAssignedTransitionManager));
+            report.AppendLine("- Bootstrap.registry assigned: " + ToYesNo(result.BootstrapAssignedRegistry));
+            report.AppendLine("- Bootstrap.gameController assigned: " + ToYesNo(result.BootstrapAssignedGameController));
+            report.AppendLine("- `enableSceneMode` disabled: " + ToYesNo(result.EnableSceneModeDisabled));
+            report.AppendLine("- `initialPlanetIndex`: " + result.InitialPlanetIndex);
+            if (!string.IsNullOrEmpty(result.Error))
+            {
+                report.AppendLine("- Error: " + result.Error);
+            }
+        }
+
+        private static void AppendPhase5BValidationSection(StringBuilder report, Phase5BValidationResult result)
+        {
+            if (result == null)
+            {
+                report.AppendLine("No Phase 5B validation has been recorded yet.");
+                return;
+            }
+
+            report.AppendLine("- Validation success: " + ToYesNo(result.Success));
+            report.AppendLine("- Core scene path: `" + result.CoreScenePath + "`");
+            report.AppendLine("- Planet1 scene path: `" + result.Planet1ScenePath + "`");
+            report.AppendLine("- Core scene root count: " + result.CoreRootCount);
+            report.AppendLine("- Planet1 scene root count: " + result.Planet1RootCount);
+            report.AppendLine("- Registry exists in Core: " + ToYesNo(result.RegistryExists));
+            report.AppendLine("- TransitionManager exists in Core: " + ToYesNo(result.TransitionManagerExists));
+            report.AppendLine("- Bootstrap exists in Core: " + ToYesNo(result.BootstrapExists));
+            report.AppendLine("- GameController exists in Core: " + ToYesNo(result.GameControllerExists));
+            report.AppendLine("- HUD exists in Core: " + ToYesNo(result.HudExists));
+            report.AppendLine("- NetworkManager exists in Core: " + ToYesNo(result.NetworkManagerExists));
+            report.AppendLine("- Bootstrap `enableSceneMode` is false: " + ToYesNo(result.EnableSceneModeDisabled));
+            report.AppendLine("- Bootstrap `initialPlanetIndex`: " + result.InitialPlanetIndex);
+            report.AppendLine("- Bootstrap.transitionManager reference valid: " + ToYesNo(result.BootstrapHasTransitionReference));
+            report.AppendLine("- Bootstrap.registry reference valid: " + ToYesNo(result.BootstrapHasRegistryReference));
+            report.AppendLine("- Bootstrap.gameController reference valid: " + ToYesNo(result.BootstrapHasGameControllerReference));
+            report.AppendLine("- Planet1 `PortalNightsPlanetSceneRoot` count: " + result.Planet1SceneRootCount);
+            report.AppendLine("- Planet1 expected root found: " + ToYesNo(result.Planet1ExpectedRootFound));
+            report.AppendLine("- Planet1 expected root active: " + ToYesNo(result.Planet1ExpectedRootActive));
+            report.AppendLine("- Planet1 scene root exists: " + ToYesNo(result.Planet1SceneRootExists));
+            report.AppendLine("- Planet1 planetIndex matches: " + ToYesNo(result.Planet1PlanetIndexMatches));
+            report.AppendLine("- Planet1 `ValidateSetup(true)` passed: " + ToYesNo(result.Planet1ValidateSetupPassed));
+            report.AppendLine("- Core + Planet1 coexist additively in editor: " + ToYesNo(result.CoreAndPlanet1LoadedTogether));
+            report.AppendLine("- `PortalNightsArena.unity` still first enabled Build Settings scene: " + ToYesNo(result.PortalNightsArenaIsFirstEnabledScene));
+            report.AppendLine("- Core metrics:");
+            AppendMetrics(report, result.CoreMetrics);
+            report.AppendLine("- Planet1 metrics:");
+            AppendMetrics(report, result.Planet1Metrics);
+            if (!string.IsNullOrEmpty(result.Error))
+            {
+                report.AppendLine("- Error: " + result.Error);
             }
         }
 
@@ -2810,6 +3291,74 @@ namespace PortalNights.EditorTools
             public GameObject ExpectedRoot;
             public readonly List<string> ForbiddenGlobalObjects = new List<string>();
             public string Error;
+        }
+
+        private sealed class Phase5BCoreSetupResult
+        {
+            public string ScenePath;
+            public string BootstrapRootName;
+            public bool Success;
+            public bool CreatedBootstrapRoot;
+            public bool ServicesRootActive;
+            public bool RegistryAdded;
+            public bool TransitionManagerAdded;
+            public bool BootstrapAdded;
+            public int RegistryCountInScene;
+            public int TransitionManagerCountInScene;
+            public int BootstrapCountInScene;
+            public bool GameControllerFound;
+            public bool RegistryAssignedToTransitionManager;
+            public bool BootstrapAssignedTransitionManager;
+            public bool BootstrapAssignedRegistry;
+            public bool BootstrapAssignedGameController;
+            public bool EnableSceneModeDisabled;
+            public int InitialPlanetIndex;
+            public string Error;
+
+            public string ToLogLine()
+            {
+                return Success
+                    ? "success, rootCreated=" + CreatedBootstrapRoot + ", registryCount=" + RegistryCountInScene + ", transitionCount=" + TransitionManagerCountInScene + ", bootstrapCount=" + BootstrapCountInScene
+                    : "failed (" + (string.IsNullOrEmpty(Error) ? "validation mismatch" : Error) + ")";
+            }
+        }
+
+        private sealed class Phase5BValidationResult
+        {
+            public string CoreScenePath;
+            public string Planet1ScenePath;
+            public bool Success;
+            public int CoreRootCount;
+            public int Planet1RootCount;
+            public bool RegistryExists;
+            public bool TransitionManagerExists;
+            public bool BootstrapExists;
+            public bool GameControllerExists;
+            public bool HudExists;
+            public bool NetworkManagerExists;
+            public bool EnableSceneModeDisabled;
+            public int InitialPlanetIndex;
+            public bool BootstrapHasTransitionReference;
+            public bool BootstrapHasRegistryReference;
+            public bool BootstrapHasGameControllerReference;
+            public int Planet1SceneRootCount;
+            public bool Planet1ExpectedRootFound;
+            public bool Planet1ExpectedRootActive;
+            public bool Planet1SceneRootExists;
+            public bool Planet1PlanetIndexMatches;
+            public bool Planet1ValidateSetupPassed;
+            public bool CoreAndPlanet1LoadedTogether;
+            public bool PortalNightsArenaIsFirstEnabledScene;
+            public SceneMetrics CoreMetrics;
+            public SceneMetrics Planet1Metrics;
+            public string Error;
+
+            public string ToLogLine()
+            {
+                return Success
+                    ? "success, coreRoots=" + CoreRootCount + ", planet1SceneRoots=" + Planet1SceneRootCount
+                    : "failed (" + (string.IsNullOrEmpty(Error) ? "validation mismatch" : Error) + ")";
+            }
         }
     }
 }
